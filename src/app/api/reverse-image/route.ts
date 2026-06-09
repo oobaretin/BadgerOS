@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runReverseImageSearch } from "@/lib/modules/reverseImage";
 
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
   const image = formData.get("image");

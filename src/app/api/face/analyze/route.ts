@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 const FACE_SERVER_URL = process.env.FACE_SERVER_URL ?? "http://127.0.0.1:5001";
 
+export const maxDuration = 60;
+
 async function imageToBase64(image: File | Blob): Promise<string> {
   const bytes = await image.arrayBuffer();
   return Buffer.from(bytes).toString("base64");
@@ -74,7 +76,9 @@ export async function POST(req: NextRequest) {
         source: "Face Analysis",
         deepface: {
           error: offline
-            ? "Face server offline — run: npm run face (or npm run dev)"
+            ? process.env.VERCEL
+              ? "Face server unavailable — deploy python/face_server.py separately and set FACE_SERVER_URL"
+              : "Face server offline — run: npm run face (or npm run dev)"
             : message,
         },
       },

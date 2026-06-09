@@ -4,6 +4,8 @@ import { runDeepResearch } from "@/lib/deepResearch";
 import { persistReconReport } from "@/lib/reports";
 import { checkRateLimit, getClientKey } from "@/lib/rateLimit";
 
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   const clientKey = getClientKey(req);
   const limit = checkRateLimit(clientKey);

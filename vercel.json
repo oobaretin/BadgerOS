@@ -1,0 +1,12 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "functions": {
+    "src/app/api/recon/route.ts": { "maxDuration": 60 },
+    "src/app/api/deep/route.ts": { "maxDuration": 60 },
+    "src/app/api/reverse-image/route.ts": { "maxDuration": 60 },
+    "src/app/api/face/route.ts": { "maxDuration": 60 },
+    "src/app/api/face/analyze/route.ts": { "maxDuration": 60 },
+    "src/app/api/plate/ocr/route.ts": { "maxDuration": 30 }
+  }
+}

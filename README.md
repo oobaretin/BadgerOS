@@ -84,3 +84,48 @@ src/
 ```
 
 For authorized security research only.
+
+## Deploy to Vercel
+
+BadgerOS is a standard Next.js app and deploys to [Vercel](https://vercel.com) from GitHub.
+
+### 1. Import the repo
+
+1. Push this repo to GitHub (already at [oobaretin/BadgerOS](https://github.com/oobaretin/BadgerOS)).
+2. In [Vercel Dashboard](https://vercel.com/new) → **Add New Project** → import **BadgerOS**.
+3. Framework preset: **Next.js** (auto-detected). Root directory: `.`
+
+### 2. Environment variables
+
+In **Project Settings → Environment Variables**, add the API keys you need from `.env.example` (e.g. `VIRUSTOTAL_API_KEY`, `SERPAPI_KEY`, etc.).
+
+Optional:
+
+| Variable | Purpose |
+|----------|---------|
+| `FACE_SERVER_URL` | External DeepFace server URL (face analysis does not run on Vercel) |
+| `RECON_DB_PATH` | Custom SQLite path (defaults to `/tmp/recon.db` on Vercel) |
+
+You do **not** need `NEXT_PUBLIC_BASE_URL` on Vercel — the app uses direct module calls, not self-fetch.
+
+### 3. Deploy
+
+Click **Deploy**. Vercel runs `npm run build` automatically.
+
+### CLI (optional)
+
+```bash
+npx vercel login
+npx vercel link
+npx vercel env pull .env.local   # sync env vars locally
+npx vercel --prod
+```
+
+### Vercel limitations
+
+| Feature | On Vercel |
+|---------|-----------|
+| OSINT modules (recon, deep, whois, etc.) | Works — add API keys in env |
+| Saved reports (SQLite) | Ephemeral (`/tmp`) — resets on cold starts |
+| Face analysis (DeepFace) | Requires separate Python host + `FACE_SERVER_URL` |
+| Function timeout | Up to 60s on Pro; Hobby plan is 10s (deep recon may timeout) |

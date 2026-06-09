@@ -1,7 +1,18 @@
 import Database from "better-sqlite3";
-import path from "path";
+import os from "node:os";
+import path from "node:path";
 
-const db = new Database(path.join(process.cwd(), "recon.db"));
+function resolveDbPath(): string {
+  if (process.env.RECON_DB_PATH?.trim()) {
+    return process.env.RECON_DB_PATH.trim();
+  }
+  if (process.env.VERCEL) {
+    return path.join(os.tmpdir(), "recon.db");
+  }
+  return path.join(process.cwd(), "recon.db");
+}
+
+const db = new Database(resolveDbPath());
 
 db.exec(`
   create table if not exists reports (
