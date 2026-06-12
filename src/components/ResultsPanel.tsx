@@ -1491,6 +1491,8 @@ function ThreatResults({ data }: { data: Record<string, unknown> }) {
             </div>
           ) : !isSkippedSource(urlhaus) && urlhaus?.query_status === "no_results" ? (
             <p className="text-sm text-emerald-400">Host not in URLhaus</p>
+          ) : !isSkippedSource(urlhaus) && (urlhaus as { error?: string })?.error ? (
+            <p className="text-sm text-foreground/50">{String((urlhaus as { error?: string }).error)}</p>
           ) : null}
         </DataSection>
       </SkippableSection>
