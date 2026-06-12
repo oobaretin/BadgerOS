@@ -12,6 +12,7 @@ const KEY_LABELS: Record<string, string> = {
 
 export function UploadKeysBanner({ keys }: { keys: (keyof typeof KEY_LABELS)[] }) {
   const [missing, setMissing] = useState<string[]>([]);
+  const [setupHint, setSetupHint] = useState("Add these keys to .env.local, then restart npm run dev:");
 
   useEffect(() => {
     fetch("/api/config")
@@ -23,6 +24,9 @@ export function UploadKeysBanner({ keys }: { keys: (keyof typeof KEY_LABELS)[] }
             .map((k: { key: string }) => k.key)
         );
         setMissing(keys.filter((k) => !configured.has(k)));
+        if (d.deployment?.keySetupHint) {
+          setSetupHint(d.deployment.keySetupHint);
+        }
       })
       .catch(() => setMissing(keys));
   }, [keys]);
@@ -31,7 +35,7 @@ export function UploadKeysBanner({ keys }: { keys: (keyof typeof KEY_LABELS)[] }
 
   return (
     <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100/90 space-y-2">
-      <p className="font-medium">Add these keys to .env.local, then restart npm run dev:</p>
+      <p className="font-medium">{setupHint}</p>
       <ul className="space-y-1.5 text-xs">
         {missing.map((key) => (
           <li key={key}>

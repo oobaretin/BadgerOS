@@ -97,7 +97,11 @@ BadgerOS is a standard Next.js app and deploys to [Vercel](https://vercel.com) f
 
 ### 2. Environment variables
 
-In **Project Settings → Environment Variables**, add the API keys you need from `.env.example` (e.g. `VIRUSTOTAL_API_KEY`, `SERPAPI_KEY`, etc.).
+In **Project Settings → Environment Variables**, add the API keys you need from `.env.example`.
+
+**Phone lookups on Vercel require `NUMLOOKUP_KEY`** (free at [numlookupapi.com](https://app.numlookupapi.com/register)). Keys in your local `.env.local` are **not** copied to Vercel — add them in the dashboard, then **Redeploy**.
+
+Common keys: `NUMLOOKUP_KEY`, `ABUSECH_AUTH_KEY`, `VIRUSTOTAL_API_KEY`, `SERPAPI_KEY`, etc.
 
 Optional:
 

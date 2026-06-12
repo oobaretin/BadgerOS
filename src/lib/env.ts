@@ -63,6 +63,8 @@ export function getApiKeyStatus() {
   );
 }
 
-export function skippedSource(reason = "No API key configured") {
-  return { skipped: true, reason };
+import { getKeySetupHint } from "@/lib/keySetup";
+
+export function skippedSource(reason?: string) {
+  return { skipped: true, reason: reason ?? getKeySetupHint() };
 }

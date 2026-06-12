@@ -1,5 +1,6 @@
 import { fetchJson } from "@/lib/fetchExternal";
 import { hasEnv, skippedSource } from "@/lib/env";
+import { getKeySetupHint } from "@/lib/keySetup";
 
 export function normalizePhoneNumber(value: string): string {
   return value.replace(/\D/g, "");
@@ -17,11 +18,12 @@ export async function runPhoneIntel(query: string) {
   }
 
   if (!hasEnv("NUMLOOKUP_KEY")) {
+    const reason = `${getKeySetupHint("NUMLOOKUP_KEY")} Get a free key at numlookupapi.com.`;
     return {
       source: "Phone Intelligence",
       number,
-      error: "Add NUMLOOKUP_KEY (numlookupapi.com — free tier)",
-      numlookup: skippedSource("Add NUMLOOKUP_KEY (numlookupapi.com — free tier)"),
+      error: reason,
+      numlookup: skippedSource(reason),
     };
   }
 

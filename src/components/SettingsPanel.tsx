@@ -18,13 +18,19 @@ export function SettingsPanel({
 }) {
   const [keys, setKeys] = useState<KeyStatus[]>([]);
   const [loading, setLoading] = useState(false);
+  const [keySetupHint, setKeySetupHint] = useState("Set in .env.local — values never shown here");
+  const [isVercel, setIsVercel] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setLoading(true);
     fetch("/api/config")
       .then((r) => r.json())
-      .then((d) => setKeys(d.keys ?? []))
+      .then((d) => {
+        setKeys(d.keys ?? []);
+        setKeySetupHint(d.deployment?.keySetupHint ?? "Set in .env.local — values never shown here");
+        setIsVercel(d.deployment?.platform === "vercel");
+      })
       .catch(() => setKeys([]))
       .finally(() => setLoading(false));
   }, [open]);
@@ -58,12 +64,22 @@ export function SettingsPanel({
             <div className="flex items-center justify-between gap-2 px-4 py-4 border-b border-border">
               <div>
                 <h2 className="text-sm font-semibold">API Keys</h2>
-                <p className="text-[10px] text-muted mt-0.5">Set in .env.local — values never shown here</p>
+                <p className="text-[10px] text-muted mt-0.5">{keySetupHint}</p>
               </div>
               <button type="button" onClick={onToggle} className="rounded-lg p-1.5 text-muted hover:text-foreground">
                 ✕
               </button>
             </div>
+            {isVercel && configured < keys.length && (
+              <div className="mx-3 mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs text-amber-100/90">
+                <p className="font-medium">Deployed on Vercel</p>
+                <p className="mt-1 text-amber-100/75">
+                  Keys in <code className="text-amber-200">.env.local</code> do not apply here. Add them in the
+                  Vercel dashboard, then redeploy. Phone lookup needs{" "}
+                  <code className="text-amber-200">NUMLOOKUP_KEY</code>.
+                </p>
+              </div>
+            )}
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
               {loading ? (
                 <p className="text-xs text-muted text-center py-8">Loading…</p>
