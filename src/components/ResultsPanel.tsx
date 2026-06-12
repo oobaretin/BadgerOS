@@ -70,10 +70,11 @@ function SkippableSection({
 }
 
 function isSkippedGridChild(child: React.ReactElement): boolean {
-  if (child.type === SkippableSection && child.props.skipped === true) {
+  const props = child.props as { skipped?: boolean; "data-skipped"?: string };
+  if (child.type === SkippableSection && props.skipped === true) {
     return true;
   }
-  return child.props["data-skipped"] === "true";
+  return props["data-skipped"] === "true";
 }
 
 function SkippedSourcesFold({
