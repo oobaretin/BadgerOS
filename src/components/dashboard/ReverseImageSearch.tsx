@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isImageFile, resetFileInput } from "@/lib/imageUpload";
+import { UploadKeysBanner } from "@/components/dashboard/UploadKeysBanner";
 
 interface ReverseImageResult {
   source?: string;
@@ -10,6 +12,7 @@ interface ReverseImageResult {
   tineye?: Record<string, unknown> | null;
   manualLinks?: Record<string, string>;
   error?: string;
+  upload?: { skipped?: boolean; reason?: string };
 }
 
 function SkippedBanner({ data }: { data: unknown }) {
@@ -118,8 +121,9 @@ export function ReverseImageSearch() {
       const res = await fetch("/api/reverse-image", { method: "POST", body: form });
       const data = (await res.json()) as ReverseImageResult;
 
-      if (!res.ok) {
-        setError(data.error ?? "Reverse image search failed");
+      if (data.error && !data.imageUrl) {
+        setError(data.error.replace(/^Error: /, ""));
+        setResult(data.upload ? data : null);
         return;
       }
 
@@ -136,11 +140,12 @@ export function ReverseImageSearch() {
     setDragActive(false);
     if (loading) return;
     const file = e.dataTransfer.files[0];
-    if (file?.type.startsWith("image/")) setPreviewFile(file);
+    if (file && isImageFile(file)) setPreviewFile(file);
   };
 
   return (
     <div className="space-y-6">
+      <UploadKeysBanner keys={["IMGBB_KEY", "BING_VISION_KEY", "SERPAPI_KEY", "TINEYE_KEY"]} />
       <div className="space-y-2">
         <label htmlFor="image-url" className="text-xs text-muted">
           Public image URL (optional — skips imgbb upload)
@@ -176,18 +181,21 @@ export function ReverseImageSearch() {
         ) : (
           <div className="space-y-2 py-4">
             <p className="text-sm font-medium">Drop an image or click to upload</p>
-            <p className="text-xs text-muted">Requires IMGBB_KEY when no URL is provided</p>
+            <p className="text-xs text-muted">
+              File uploads work without IMGBB_KEY (temporary host). Add API keys for automated results.
+            </p>
           </div>
         )}
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.heic,.heif"
           className="hidden"
           disabled={loading}
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) setPreviewFile(file);
+            resetFileInput(e.target);
           }}
         />
       </div>

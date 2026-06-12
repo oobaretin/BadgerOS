@@ -58,6 +58,19 @@ function EnrichmentCard({
           )}
         </ul>
       )}
+      {kind === "hunter_email" && (
+        <dl className="text-xs space-y-1">
+          {data.skipped ? (
+            <p className="text-muted">{String(data.reason ?? "Skipped")}</p>
+          ) : (
+            <>
+              <p>Status: {String(data.status ?? "—")}</p>
+              <p>Result: {String(data.result ?? "—")}</p>
+              <p>Score: {String(data.score ?? "—")}</p>
+            </>
+          )}
+        </dl>
+      )}
     </div>
   );
 }

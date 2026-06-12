@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   detectInputType,
   INPUT_TYPE_COLORS,
@@ -11,14 +11,14 @@ import {
 import type { DeepReconResponse } from "@/lib/deepResearch/types";
 import { getActiveRoutes, fetchReconProgressive, fetchDeepResearchProgressive } from "@/lib/reconClient";
 import { downloadReconCsv, downloadReconJson } from "@/lib/export";
-import { ResultsPanel } from "@/components/ResultsPanel";
+import { ReportView } from "@/components/ReportView";
 import { DeepResearchPanel } from "@/components/DeepResearchPanel";
 import {
   SearchHistorySidebar,
   saveSearchHistory,
 } from "@/components/SearchHistorySidebar";
 import { SettingsPanel } from "@/components/SettingsPanel";
-import { SavedReportsPanel } from "@/components/SavedReportsPanel";
+import { SavedReportsPanel, type SavedReport } from "@/components/SavedReportsPanel";
 import { ThemeToggle } from "@/components/dashboard/ThemeToggle";
 import { TypeBadge } from "@/components/dashboard/TypeBadge";
 import { SearchInput } from "@/components/dashboard/SearchInput";
@@ -51,6 +51,11 @@ export default function Dashboard() {
   const [ukPlate, setUkPlate] = useState(false);
   const [activeTab, setActiveTab] = useState<DashboardTab>("recon");
   const [scannerError, setScannerError] = useState<string | null>(null);
+  const [modulesOpen, setModulesOpen] = useState(true);
+  const resultsRef = useRef<HTMLElement>(null);
+  const scrollQueryRef = useRef<string | null>(null);
+
+  const showReconResults = loading || Boolean(result);
 
   useEffect(() => {
     const stored = localStorage.getItem("badger-theme") as Theme | null;
@@ -120,6 +125,8 @@ export default function Dashboard() {
       setResult({ type, query: trimmed, results: [] });
       setPendingRoutes(routes);
       setHistoryOpen(false);
+      setModulesOpen(false);
+      scrollQueryRef.current = trimmed;
 
       try {
         const searchOpts = options ?? buildSearchOptions();
@@ -161,6 +168,33 @@ export default function Dashboard() {
     [query, runSearch]
   );
 
+  const handleSavedReportSelect = useCallback(
+    async (report: SavedReport) => {
+      setReportsOpen(false);
+      setLoading(true);
+      setError(null);
+      setPendingRoutes([]);
+      setModulesOpen(false);
+      scrollQueryRef.current = report.query;
+
+      try {
+        const res = await fetch(`/api/reports/${report.id}`);
+        if (!res.ok) throw new Error("Report load failed");
+        const restored = (await res.json()) as DeepReconResponse;
+        setQuery(restored.query);
+        setDetectedType(restored.type);
+        setResult(restored);
+      } catch {
+        setQuery(report.query);
+        setDetectedType(detectInputType(report.query));
+        await runSearch(report.query);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [runSearch]
+  );
+
   const handleHistorySelect = useCallback(
     (value: string, cached?: ReconResponse) => {
       handleQueryChange(value);
@@ -171,6 +205,8 @@ export default function Dashboard() {
         setPendingRoutes([]);
         setLoading(false);
         setError(null);
+        setModulesOpen(false);
+        scrollQueryRef.current = value;
         return;
       }
       runSearch(value);
@@ -182,6 +218,23 @@ export default function Dashboard() {
     if (!detectedType || detectedType === "unknown") return 0;
     return getActiveRoutes(detectedType, runAll).length;
   }, [detectedType, runAll]);
+
+  useEffect(() => {
+    if (!showReconResults || activeTab !== "recon") return;
+    const targetQuery = result?.query ?? query.trim();
+    if (!targetQuery || scrollQueryRef.current !== targetQuery) return;
+
+    requestAnimationFrame(() => {
+      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [showReconResults, activeTab, result?.query, query, loading]);
+
+  useEffect(() => {
+    if (!result && !loading) {
+      setModulesOpen(true);
+      scrollQueryRef.current = null;
+    }
+  }, [result, loading]);
 
   const handlePlateOcrComplete = useCallback(
     (payload: PlateOcrCompletePayload) => {
@@ -248,7 +301,7 @@ export default function Dashboard() {
             <SavedReportsPanel
               open={reportsOpen}
               onToggle={() => setReportsOpen((v) => !v)}
-              onSelect={(q) => handleSearch(q)}
+              onSelect={handleSavedReportSelect}
             />
             <SettingsPanel open={settingsOpen} onToggle={() => setSettingsOpen((v) => !v)} />
             <ThemeToggle theme={theme} onToggle={toggleTheme} />
@@ -313,16 +366,94 @@ export default function Dashboard() {
           )}
         </section>
 
-        <section className="space-y-4">
-          <div>
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted">OSINT Modules</h3>
-            <p className="text-xs text-muted/70 mt-1">
-              {detectedType && detectedType !== "unknown"
-                ? `${activeRouteCount} module${activeRouteCount !== 1 ? "s" : ""} will run${runAll ? " (all enabled)" : ` for ${INPUT_TYPE_LABELS[detectedType]}`}`
-                : "Start typing to see detected input type"}
-            </p>
-          </div>
+        {showReconResults && (
+          <section
+            ref={resultsRef}
+            id="recon-results"
+            className="space-y-5 scroll-mt-28"
+          >
+            {loading && !result?.results.length && (
+              <div className="grid grid-cols-1 gap-4">
+                {Array.from({ length: activeRouteCount || 3 }).map((_, i) => (
+                  <SkeletonCard key={i} />
+                ))}
+              </div>
+            )}
 
+            {result && (
+              <>
+                <div className="flex flex-wrap items-center gap-3 pb-1 border-b border-border">
+                  <TypeBadge type={result.type} />
+                  <span className="font-mono text-sm text-muted">{result.query}</span>
+                  {result.reportId && (
+                    <span className="text-[10px] rounded-full border border-emerald-400/30 bg-emerald-400/10 text-emerald-400 px-2 py-0.5">
+                      Saved
+                    </span>
+                  )}
+                  <div className="flex gap-2 ml-auto">
+                    <button
+                      type="button"
+                      onClick={() => downloadReconCsv(result)}
+                      disabled={loading}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground/70 hover:text-foreground hover:border-accent/40 transition-colors disabled:opacity-40"
+                    >
+                      Export CSV
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => downloadReconJson(result)}
+                      disabled={loading}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground/70 hover:text-foreground hover:border-accent/40 transition-colors disabled:opacity-40"
+                    >
+                      Export JSON
+                    </button>
+                  </div>
+                </div>
+                <ReportView
+                  response={result}
+                  loading={loading && !deepLoading}
+                  pendingRoutes={pendingRoutes}
+                  expandPrimary
+                  onPivotSearch={async (label) => {
+                    await handleSearch(label);
+                  }}
+                />
+                {deepLoading && (
+                  <div className="rounded-2xl border border-accent/30 bg-accent/5 p-5 text-sm text-muted animate-pulse">
+                    Deep research in progress — extracting pivots and running secondary lookups…
+                  </div>
+                )}
+                {result.deep && (
+                  <DeepResearchPanel deep={result.deep} loading={deepLoading} />
+                )}
+              </>
+            )}
+          </section>
+        )}
+
+        <section className="space-y-4">
+          <button
+            type="button"
+            onClick={() => setModulesOpen((v) => !v)}
+            className="flex w-full items-center justify-between gap-3 text-left group"
+            aria-expanded={modulesOpen}
+          >
+            <div>
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-muted group-hover:text-foreground transition-colors">
+                OSINT Modules
+              </h3>
+              <p className="text-xs text-muted/70 mt-1">
+                {detectedType && detectedType !== "unknown"
+                  ? `${activeRouteCount} module${activeRouteCount !== 1 ? "s" : ""} will run${runAll ? " (all enabled)" : ` for ${INPUT_TYPE_LABELS[detectedType]}`}`
+                  : "Start typing to see detected input type"}
+              </p>
+            </div>
+            <span className="text-xs text-muted shrink-0">
+              {modulesOpen ? "Hide" : "Show"}
+            </span>
+          </button>
+
+          {modulesOpen && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {MODULES.map((mod) => {
               const activeRoutes =
@@ -364,9 +495,10 @@ export default function Dashboard() {
               );
             })}
           </div>
+          )}
         </section>
 
-        {!result && !loading && (
+        {!showReconResults && (
           <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {(["email", "ip", "domain", "phone", "plate", "username"] as const).map((type) => (
               <button
@@ -384,59 +516,6 @@ export default function Dashboard() {
           </section>
         )}
 
-        {loading && !result?.results.length && (
-          <section className="grid grid-cols-1 gap-4">
-            {Array.from({ length: activeRouteCount || 3 }).map((_, i) => (
-              <SkeletonCard key={i} />
-            ))}
-          </section>
-        )}
-
-        {result && (
-          <section className="space-y-5">
-            <div className="flex flex-wrap items-center gap-3 pb-1 border-b border-border">
-              <TypeBadge type={result.type} />
-              <span className="font-mono text-sm text-muted">{result.query}</span>
-              {result.reportId && (
-                <span className="text-[10px] rounded-full border border-emerald-400/30 bg-emerald-400/10 text-emerald-400 px-2 py-0.5">
-                  Saved
-                </span>
-              )}
-              <div className="flex gap-2 ml-auto">
-                <button
-                  type="button"
-                  onClick={() => downloadReconCsv(result)}
-                  disabled={loading}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground/70 hover:text-foreground hover:border-accent/40 transition-colors disabled:opacity-40"
-                >
-                  Export CSV
-                </button>
-                <button
-                  type="button"
-                  onClick={() => downloadReconJson(result)}
-                  disabled={loading}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground/70 hover:text-foreground hover:border-accent/40 transition-colors disabled:opacity-40"
-                >
-                  Export JSON
-                </button>
-              </div>
-            </div>
-            <ResultsPanel
-              response={result}
-              loading={loading && !deepLoading}
-              pendingRoutes={pendingRoutes}
-              expandPrimary
-            />
-            {deepLoading && (
-              <div className="rounded-2xl border border-accent/30 bg-accent/5 p-5 text-sm text-muted animate-pulse">
-                Deep research in progress — extracting pivots and running secondary lookups…
-              </div>
-            )}
-            {result.deep && (
-              <DeepResearchPanel deep={result.deep} loading={deepLoading} />
-            )}
-          </section>
-        )}
           </>
         )}
 
@@ -483,7 +562,13 @@ export default function Dashboard() {
                     </button>
                   </div>
                 </div>
-                <ResultsPanel response={result} expandPrimary />
+                <ReportView
+                  response={result}
+                  expandPrimary
+                  onPivotSearch={async (label) => {
+                    await handleSearch(label);
+                  }}
+                />
               </div>
             )}
           </section>

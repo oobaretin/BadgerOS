@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isImageFile, resetFileInput } from "@/lib/imageUpload";
+import { UploadKeysBanner } from "@/components/dashboard/UploadKeysBanner";
 import { isVin, normalizeVin } from "@/lib/vehicleDetect";
 
 export interface PlateOcrCompletePayload {
@@ -138,7 +140,7 @@ export function PlateOCRUploader({
         const ocrRes = await fetch("/api/plate/ocr", { method: "POST", body: form });
         const ocrData = (await ocrRes.json()) as OcrResultState & Record<string, unknown>;
 
-        if (!ocrRes.ok) {
+        if (!ocrRes.ok || ocrData.error) {
           const message = String(ocrData.error ?? "Plate OCR failed");
           onError?.(message);
           setResult({ error: message });
@@ -185,6 +187,7 @@ export function PlateOCRUploader({
         setPhase("idle");
       } finally {
         setLoading(false);
+        resetFileInput(inputRef.current);
       }
     },
     [country, onComplete, onError, setPreviewFile]
@@ -195,7 +198,7 @@ export function PlateOCRUploader({
     setDragActive(false);
     if (disabled || loading) return;
     const file = e.dataTransfer.files[0];
-    if (file?.type.startsWith("image/")) handleFile(file);
+    if (file && isImageFile(file)) handleFile(file);
   };
 
   const recallCount = getRecallCount(result?.vinDetails);
@@ -209,6 +212,7 @@ export function PlateOCRUploader({
           : "rounded-xl border border-orange-400/30 bg-orange-400/5 p-4 space-y-4"
       }
     >
+      <UploadKeysBanner keys={["PLATE_RECOGNIZER_KEY"]} />
       {!isScanner && (
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/90">
@@ -287,12 +291,13 @@ export function PlateOCRUploader({
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.heic,.heif"
           className="hidden"
           disabled={disabled || loading}
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) handleFile(file);
+            resetFileInput(e.target);
           }}
         />
       </div>

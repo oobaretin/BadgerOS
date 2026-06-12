@@ -2,7 +2,7 @@ import { fetchJson } from "@/lib/fetchExternal";
 import { hasEnv, skippedSource } from "@/lib/env";
 
 export async function runBreachIntel(query: string) {
-  const [rep, hibp, breachdir] = await Promise.all([
+  const [rep, hibp, breachdir, disify, kickbox, hunter] = await Promise.all([
     fetchJson(`https://emailrep.io/${encodeURIComponent(query)}`, {
       headers: {
         "User-Agent": "BadgerOS-Personal",
@@ -35,6 +35,20 @@ export async function runBreachIntel(query: string) {
           }
         )
       : Promise.resolve({ ok: true, status: 0, data: skippedSource() }),
+
+    fetchJson(`https://disify.com/api/email/${encodeURIComponent(query)}`, undefined, 10_000),
+
+    fetchJson(
+      `https://open.kickbox.com/v1/disposable/${encodeURIComponent(query)}`,
+      undefined,
+      10_000
+    ),
+
+    hasEnv("HUNTER_KEY") && query.includes("@")
+      ? fetchJson(
+          `https://api.hunter.io/v2/email-verifier?email=${encodeURIComponent(query)}&api_key=${process.env.HUNTER_KEY!}`
+        )
+      : Promise.resolve({ ok: true, status: 0, data: skippedSource("Hunter email verifier needs HUNTER_KEY and an email target") }),
   ]);
 
   return {
@@ -42,5 +56,8 @@ export async function runBreachIntel(query: string) {
     reputation: rep.ok || rep.status === 200 ? rep.data : rep.data,
     hibp: hibp.data,
     breachDirectory: breachdir.data,
+    disify: disify.data,
+    kickbox: kickbox.data,
+    hunter: hunter.data,
   };
 }

@@ -6,13 +6,13 @@ Next.js OSINT dashboard — one search box, auto-detects input type, and fans ou
 
 | Module | Route | Input types | Sources |
 |--------|-------|-------------|---------|
-| Breach Intel | `/api/breach` | email | EmailRep, HIBP, BreachDirectory |
-| IP Intelligence | `/api/ip` | ip, domain | ip-api, AbuseIPDB, Shodan, InternetDB |
-| Phone Intelligence | `/api/phone` | phone | Numverify (apilayer.com — free), Abstract Phone (abstractapi.com — free) |
+| Breach Intel | `/api/breach` | email | EmailRep, HIBP, BreachDirectory, Disify, Kickbox, Hunter (verifier) |
+| IP Intelligence | `/api/ip` | ip, domain | ip-api, AbuseIPDB, Shodan, InternetDB, GreyNoise, IPinfo |
+| Phone Intelligence | `/api/phone` | phone | NumLookup (numlookupapi.com — free) |
 | Vehicle Intel | `/api/plate` | plate, VIN | NHTSA (free), DVLA (developer.gov.uk — free, UK), Plate Recognizer (2500 free/mo) |
-| Domain Intel | `/api/whois` | domain | RDAP, Google DNS, crt.sh, SecurityTrails, Wayback |
-| Threat Intel | `/api/threat` | domain | VirusTotal, OTX, urlscan, PhishTank |
-| Username OSINT | `/api/username` | username | GitHub, Reddit, Dev.to, HN + HEAD checks |
+| Domain Intel | `/api/whois` | domain | RDAP, Google DNS, crt.sh, SecurityTrails, Wayback, DomainsDB, Hunter |
+| Threat Intel | `/api/threat` | domain, ip | VirusTotal, OTX, urlscan, PhishTank, Mozilla Observatory, URLhaus, MalwareBazaar |
+| Username OSINT | `/api/username` | username | GitHub, Reddit, Dev.to, HN, Bluesky + HEAD checks |
 
 Smart routing runs only relevant modules per input type. Enable **Run all 7 modules** in the UI to override.
 
@@ -20,8 +20,8 @@ Smart routing runs only relevant modules per input type. Enable **Run all 7 modu
 
 Enable **Deep research** to run a second analysis pass after primary recon:
 
-- **Primary enrichments** — Gravatar (email), SPF/DMARC TXT + nameservers (domain), reverse DNS PTR (IP)
-- **Entity pivots** — subdomains from crt.sh, MX hosts, DNS A records, reverse hostnames
+- **Primary enrichments** — Gravatar + Hunter verifier (email), SPF/DMARC TXT + nameservers (domain), reverse DNS PTR (IP)
+- **Entity pivots** — subdomains from crt.sh, MX hosts, DNS A records, Hunter emails, DomainsDB related domains, reverse hostnames
 - **Secondary lookups** — targeted whois/threat/IP modules on discovered related entities
 - **Investigation summary** — insights and suggested next steps
 
@@ -43,7 +43,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ### API keys
 
-See `.env.example` for optional keys. Free sources (ip-api, RDAP, crt.sh, InternetDB, archive.org, NHTSA, etc.) work without keys. Phone: **apilayer.com** + **abstractapi.com**. Vehicle: **developer.gov.uk** (UK plates) + **platerecognizer.com** (image ALPR, 2500 free/mo — pass `imageUrl` in API).
+See `.env.example` for optional keys. Free sources (ip-api, RDAP, crt.sh, InternetDB, Disify, Kickbox, GreyNoise Community, IPinfo lite, Mozilla Observatory, Clearbit logo URLs, Bluesky public API, etc.) work without keys. Optional keyed integrations: **auth.abuse.ch** (URLhaus + MalwareBazaar), **domainsdb.info**, **hunter.io**. Phone: **numlookupapi.com**. Vehicle: **developer.gov.uk** (UK plates) + **platerecognizer.com** (image ALPR, 2500 free/mo — pass `imageUrl` in API).
 
 Use the **Keys** button in the header to see which keys are configured (values are never displayed).
 

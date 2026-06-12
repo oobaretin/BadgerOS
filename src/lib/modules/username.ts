@@ -25,6 +25,18 @@ const PLATFORMS = [
     profile: (u: string) => `https://news.ycombinator.com/user?id=${u}`,
     check: (r: { id?: string } | null) => !!r?.id,
   },
+  {
+    name: "Bluesky",
+    url: (u: string) => {
+      const handle = u.includes(".") ? u : `${u}.bsky.social`;
+      return `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(handle)}`;
+    },
+    profile: (u: string) => {
+      const handle = u.includes(".") ? u : `${u}.bsky.social`;
+      return `https://bsky.app/profile/${handle}`;
+    },
+    check: (r: { handle?: string }) => !!r.handle,
+  },
 ];
 
 const HEAD_PLATFORMS = [

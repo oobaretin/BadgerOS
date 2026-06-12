@@ -19,7 +19,7 @@ async function probeUrl(url) {
 async function probeHealthyDev() {
   for (let attempt = 1; attempt <= 4; attempt++) {
     const home = await probeUrl("http://localhost:3000/");
-    if (!home.ok) {
+    if (home.status !== 200) {
       await new Promise((r) => setTimeout(r, 750));
       continue;
     }
@@ -76,7 +76,10 @@ function freePort(port, kind) {
 
 const forceClean = process.argv.includes("--clean");
 const cssMissing = existsSync(nextDir) && !existsSync(cssPath);
+const productionBuildCache =
+  existsSync(nextDir) && existsSync(path.join(nextDir, "export-marker.json"));
 const port3000InUse = portPids(3000).length > 0;
+const needsClean = forceClean || cssMissing || productionBuildCache;
 
 const healthy = await probeHealthyDev();
 if (healthy?.home.ok && healthy.css.ok) {
@@ -84,18 +87,26 @@ if (healthy?.home.ok && healthy.css.ok) {
   process.exit(0);
 }
 
+if (healthy && !healthy.home.ok) {
+  console.log("[badgeros] Server on :3000 returned errors — restarting after cache clear.");
+}
+
 if (healthy?.brokenCss) {
   console.log("[badgeros] Server on :3000 but CSS is broken — restarting after cache clear.");
 }
 
-if ((forceClean || cssMissing) && port3000InUse) {
+if (needsClean && port3000InUse) {
   console.log("[badgeros] Stopping existing Next.js on :3000 before cache clear…");
   freePort(3000, "next");
   await new Promise((r) => setTimeout(r, 2000));
 }
 
-if (forceClean || cssMissing) {
-  if (cssMissing && !forceClean) {
+if (needsClean) {
+  if (productionBuildCache && !forceClean) {
+    console.log(
+      "[badgeros] Production build cache detected (npm run build) — clearing .next before dev…"
+    );
+  } else if (cssMissing && !forceClean) {
     console.log("[badgeros] Stale .next cache detected (layout.css missing) — clearing…");
   }
   rmSync(nextDir, { recursive: true, force: true });
@@ -111,4 +122,6 @@ const child = spawn('npx concurrently --kill-others-on-fail "next dev" "npm run 
   cwd: root,
 });
 
-child.on("exit", (code) => process.exit(code ?? 0));
+child.on("exit", (code) => {
+  process.exit(code ?? 0);
+});

@@ -18,10 +18,5 @@ export async function POST(req: NextRequest) {
   }
 
   const data = await runPlateOcr(image, { country });
-
-  if (data.error) {
-    return NextResponse.json(data, { status: 422 });
-  }
-
   return NextResponse.json(data);
 }

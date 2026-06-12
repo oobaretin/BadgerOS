@@ -7,10 +7,6 @@ export interface ReverseImageInput {
 }
 
 async function uploadToImgbb(file: Blob): Promise<string> {
-  if (!hasEnv("IMGBB_KEY")) {
-    throw new Error("Add IMGBB_KEY (imgbb.com — free image hosting for public URLs)");
-  }
-
   const form = new FormData();
   form.append("image", file);
 
@@ -30,9 +26,39 @@ async function uploadToImgbb(file: Blob): Promise<string> {
   return data.data.url;
 }
 
+/** Anonymous fallback when IMGBB_KEY is not configured (public URL for reverse search). */
+async function uploadToCatbox(file: Blob): Promise<string> {
+  const form = new FormData();
+  form.append("reqtype", "fileupload");
+  form.append("fileToUpload", file, "image.jpg");
+
+  const res = await fetch("https://catbox.moe/user/api.php", {
+    method: "POST",
+    body: form,
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  const url = (await res.text()).trim();
+  if (!res.ok || !url.startsWith("https://")) {
+    throw new Error(
+      "Temporary image hosting failed — add IMGBB_KEY (imgbb.com) for reliable uploads"
+    );
+  }
+
+  return url;
+}
+
+async function uploadForPublicUrl(file: Blob): Promise<{ url: string; via: "imgbb" | "catbox" }> {
+  if (hasEnv("IMGBB_KEY")) {
+    return { url: await uploadToImgbb(file), via: "imgbb" };
+  }
+  return { url: await uploadToCatbox(file), via: "catbox" };
+}
+
 async function resolveTarget(input: ReverseImageInput): Promise<{
   target: string;
   imageBlob?: Blob;
+  uploadVia?: "imgbb" | "catbox";
 }> {
   const url = input.imageUrl?.trim();
   if (url) {
@@ -40,8 +66,8 @@ async function resolveTarget(input: ReverseImageInput): Promise<{
   }
 
   if (input.image && input.image.size > 0) {
-    const target = await uploadToImgbb(input.image);
-    return { target, imageBlob: input.image };
+    const { url: target, via } = await uploadForPublicUrl(input.image);
+    return { target, imageBlob: input.image, uploadVia: via };
   }
 
   throw new Error("Provide an image file or image URL");
@@ -125,7 +151,30 @@ export function buildManualLinks(target: string) {
 }
 
 export async function runReverseImageSearch(input: ReverseImageInput) {
-  const { target, imageBlob } = await resolveTarget(input);
+  const url = input.imageUrl?.trim();
+  const hasFile = Boolean(input.image && input.image.size > 0);
+
+  if (!url && !hasFile) {
+    return {
+      source: "Reverse Image Search",
+      error: "Provide an image file or public image URL",
+      manualLinks: {},
+    };
+  }
+
+  let target: string;
+  let imageBlob: Blob | undefined;
+  let uploadVia: "imgbb" | "catbox" | undefined;
+
+  try {
+    ({ target, imageBlob, uploadVia } = await resolveTarget(input));
+  } catch (err) {
+    return {
+      source: "Reverse Image Search",
+      error: err instanceof Error ? err.message : String(err),
+      manualLinks: {},
+    };
+  }
 
   const [serpapi, bing, tineye] = await Promise.allSettled([
     searchSerpApi(target),
@@ -136,6 +185,15 @@ export async function runReverseImageSearch(input: ReverseImageInput) {
   return {
     source: "Reverse Image Search",
     imageUrl: target,
+    upload:
+      uploadVia === "catbox"
+        ? {
+            via: "catbox",
+            note: "Hosted via temporary fallback — add IMGBB_KEY for production use",
+          }
+        : uploadVia === "imgbb"
+          ? { via: "imgbb" }
+          : undefined,
     google: serpapi.status === "fulfilled" ? serpapi.value : null,
     bing: bing.status === "fulfilled" ? bing.value : null,
     tineye: tineye.status === "fulfilled" ? tineye.value : null,

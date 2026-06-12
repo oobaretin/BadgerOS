@@ -1,85 +1,33 @@
-import type { ReconResponse, ReconSourceResult } from "@/lib/detect";
+import type { InputType, ReconResponse } from "@/lib/detect";
 import type { DeepReconResponse } from "@/lib/deepResearch/types";
-import { getSourceStatus } from "@/lib/sourceStatus";
+import { buildReportFromRecon, type SaveReportInput } from "@/lib/buildReport";
+import type { ReconRoute } from "@/lib/routes";
 import db from "@/lib/db";
 
-export interface SaveReportInput {
+interface StoredModule {
+  route: string;
+  fulfilled: boolean;
+  data: Record<string, unknown>;
+}
+
+interface ReportDetailRow {
+  id: string;
   query: string;
   query_type: string;
-  summary: Record<string, unknown>;
-  modules: Record<string, unknown>;
-  risk_score: string | null;
-  tags: string[];
+  modules: string;
 }
 
-export type ReconReport = SaveReportInput;
-
-function moduleKey(source: string): string {
-  return source.replace(/^\/api\//, "");
-}
-
-function summarizeCounts(results: ReconSourceResult[]) {
-  return results.reduce(
-    (acc, r) => {
-      acc[getSourceStatus(r)] += 1;
-      return acc;
-    },
-    { found: 0, clean: 0, warning: 0 }
-  );
-}
-
-function computeRiskScore(results: ReconSourceResult[]): string {
-  const counts = summarizeCounts(results);
-  if (counts.found >= 2) return "high";
-  if (counts.found >= 1) return "medium";
-  if (counts.warning >= 2) return "medium";
-  if (counts.warning >= 1) return "low";
-  return "low";
-}
-
-function buildTags(type: string, results: ReconSourceResult[]): string[] {
-  const tags = new Set<string>([type]);
-  for (const r of results) {
-    if (getSourceStatus(r) === "found") {
-      tags.add(moduleKey(r.source));
-    }
+function parseJson<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
   }
-  return [...tags];
 }
 
-function buildModules(results: ReconSourceResult[]): Record<string, unknown> {
-  const modules: Record<string, unknown> = {};
-  for (const r of results) {
-    modules[moduleKey(r.source)] = {
-      status: getSourceStatus(r),
-      route: r.source,
-      fulfilled: r.status === "fulfilled",
-      data: r.data,
-    };
-  }
-  return modules;
-}
-
-export function buildReportFromRecon(response: ReconResponse | DeepReconResponse): ReconReport {
-  const counts = summarizeCounts(response.results);
-  const deep = "deep" in response ? response.deep : undefined;
-
-  return {
-    query: response.query,
-    query_type: response.type,
-    summary: {
-      headline:
-        deep?.summary.headline ??
-        `${counts.found} finding(s), ${counts.warning} warning(s), ${counts.clean} clean`,
-      counts,
-      deep: deep?.summary,
-      pivotCount: deep?.pivots.length ?? 0,
-    },
-    modules: buildModules(response.results),
-    risk_score: computeRiskScore(response.results),
-    tags: buildTags(response.type, response.results),
-  };
-}
+export type { ReconReport, SaveReportInput } from "@/lib/buildReport";
+export { buildReportFromRecon } from "@/lib/buildReport";
 
 export function saveReport(report: SaveReportInput): string {
   const id = crypto.randomUUID();
@@ -103,13 +51,27 @@ export function saveReport(report: SaveReportInput): string {
 }
 
 export function persistReconReport(response: ReconResponse | DeepReconResponse): string {
-  const report = buildReportFromRecon(response);
-  return saveReport({
-    query: report.query,
-    query_type: report.query_type,
-    summary: report.summary,
-    modules: report.modules,
-    risk_score: report.risk_score,
-    tags: report.tags,
-  });
+  return saveReport(buildReportFromRecon(response));
+}
+
+export function getReportById(id: string): ReconResponse | null {
+  const row = db
+    .prepare("select id, query, query_type, modules from reports where id = ?")
+    .get(id.trim()) as ReportDetailRow | undefined;
+
+  if (!row) return null;
+
+  const modules = parseJson<Record<string, StoredModule>>(row.modules, {});
+  const results = Object.values(modules).map((mod) => ({
+    source: mod.route as ReconRoute,
+    status: mod.fulfilled ? ("fulfilled" as const) : ("rejected" as const),
+    data: mod.data ?? {},
+  }));
+
+  return {
+    type: row.query_type as InputType,
+    query: row.query,
+    results,
+    reportId: row.id,
+  };
 }

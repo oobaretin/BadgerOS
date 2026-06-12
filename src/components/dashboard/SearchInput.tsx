@@ -138,7 +138,7 @@ export function SearchInput({
 
       {detectedType === "phone" && query.trim() && (
         <p className="text-center text-xs text-rose-400/80">
-          Phone lookup via Numverify &amp; Abstract API — carrier, line type, country, validity
+          Phone lookup via NumLookup — carrier, line type, country, validity
         </p>
       )}
     </div>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { INPUT_TYPE_COLORS, INPUT_TYPE_LABELS, type InputType } from "@/lib/detect";
 
-interface SavedReport {
+export interface SavedReport {
   id: string;
   created_at: string;
   query: string;
@@ -26,7 +26,7 @@ export function SavedReportsPanel({
 }: {
   open: boolean;
   onToggle: () => void;
-  onSelect: (query: string) => void;
+  onSelect: (report: SavedReport) => void;
 }) {
   const [reports, setReports] = useState<SavedReport[]>([]);
   const [loading, setLoading] = useState(false);
@@ -112,10 +112,7 @@ export function SavedReportsPanel({
                   >
                     <button
                       type="button"
-                      onClick={() => {
-                        onSelect(report.query);
-                        onToggle();
-                      }}
+                      onClick={() => onSelect(report)}
                       className="w-full text-left space-y-1"
                     >
                       <p className="font-mono text-sm truncate">{report.query}</p>

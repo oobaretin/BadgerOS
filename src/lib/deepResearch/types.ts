@@ -9,7 +9,7 @@ export interface PivotEntity {
 }
 
 export interface DeepEnrichment {
-  kind: "gravatar" | "dns_txt" | "dns_ns" | "reverse_dns";
+  kind: "gravatar" | "dns_txt" | "dns_ns" | "reverse_dns" | "hunter_email";
   target: string;
   label: string;
   data: Record<string, unknown>;

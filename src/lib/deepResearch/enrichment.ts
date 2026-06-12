@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { fetchJson } from "@/lib/fetchExternal";
+import { hasEnv } from "@/lib/env";
 import type { InputType } from "@/lib/detect";
 import type { DeepEnrichment } from "./types";
 
@@ -95,6 +96,41 @@ async function lookupGravatar(email: string) {
   } satisfies DeepEnrichment;
 }
 
+async function lookupHunterEmail(email: string) {
+  if (!hasEnv("HUNTER_KEY")) {
+    return {
+      kind: "hunter_email" as const,
+      target: email,
+      label: "Hunter email verifier",
+      data: { skipped: true, reason: "Set HUNTER_KEY (hunter.io)" },
+    } satisfies DeepEnrichment;
+  }
+
+  const res = await fetchJson(
+    `https://api.hunter.io/v2/email-verifier?email=${encodeURIComponent(email)}&api_key=${process.env.HUNTER_KEY!}`,
+    undefined,
+    12_000
+  );
+  const payload = res.data as {
+    data?: { status?: string; result?: string; score?: number; regexp?: boolean; gibberish?: boolean };
+    errors?: Array<{ details?: string }>;
+  };
+
+  return {
+    kind: "hunter_email" as const,
+    target: email,
+    label: "Hunter email verifier",
+    data: {
+      status: payload.data?.status ?? null,
+      result: payload.data?.result ?? null,
+      score: payload.data?.score ?? null,
+      regexp: payload.data?.regexp ?? null,
+      gibberish: payload.data?.gibberish ?? null,
+      error: payload.errors?.[0]?.details ?? null,
+    },
+  } satisfies DeepEnrichment;
+}
+
 export async function runPrimaryEnrichments(
   type: InputType,
   query: string
@@ -103,6 +139,7 @@ export async function runPrimaryEnrichments(
 
   if (type === "email") {
     tasks.push(lookupGravatar(query));
+    tasks.push(lookupHunterEmail(query));
     const domain = query.split("@")[1];
     if (domain) {
       tasks.push(lookupTxt(domain, "dns_txt", "Email domain TXT (SPF/DMARC)"));

@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isImageFile, resetFileInput } from "@/lib/imageUpload";
+import { UploadKeysBanner } from "@/components/dashboard/UploadKeysBanner";
 
 interface FaceRegion {
   x?: number;
@@ -59,6 +61,7 @@ interface ReverseImageResult {
   } | null;
   manualLinks?: Record<string, string>;
   error?: string;
+  upload?: { skipped?: boolean; reason?: string };
 }
 
 type StepStatus = "pending" | "running" | "done" | "skipped" | "error";
@@ -440,8 +443,9 @@ export function FaceReconUploader() {
 
   const handleFile = useCallback(
     async (file: File) => {
-      if (!file.type.startsWith("image/")) {
-        setError("Please upload an image file");
+      if (!isImageFile(file)) {
+        setError("Please upload an image file (JPEG, PNG, WebP, HEIC, etc.)");
+        resetFileInput(inputRef.current);
         return;
       }
 
@@ -461,8 +465,8 @@ export function FaceReconUploader() {
 
       try {
         const [faceRes, revRes] = await Promise.allSettled([
-          fetch("/api/face", { method: "POST", body: faceForm }).then((r) => r.json()),
-          fetch("/api/reverse-image", { method: "POST", body: revForm }).then((r) => r.json()),
+          fetch("/api/face", { method: "POST", body: faceForm }).then(async (r) => r.json()),
+          fetch("/api/reverse-image", { method: "POST", body: revForm }).then(async (r) => r.json()),
         ]);
 
         if (faceRes.status === "fulfilled") {
@@ -487,6 +491,7 @@ export function FaceReconUploader() {
         setError("Network error — analysis failed");
       } finally {
         setLoading(false);
+        resetFileInput(inputRef.current);
       }
     },
     [autoOpenManual, setPreviewFile]
@@ -497,7 +502,7 @@ export function FaceReconUploader() {
     setDragActive(false);
     if (loading) return;
     const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
+    if (file && isImageFile(file)) handleFile(file);
   };
 
   const faces = faceResult?.deepface?.faces ?? [];
@@ -510,6 +515,7 @@ export function FaceReconUploader() {
 
   return (
     <div className="space-y-6">
+      <UploadKeysBanner keys={["IMGBB_KEY", "BING_VISION_KEY", "SERPAPI_KEY", "TINEYE_KEY"]} />
       <div
         onClick={() => !loading && inputRef.current?.click()}
         onDrop={handleDrop}
@@ -542,7 +548,7 @@ export function FaceReconUploader() {
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.heic,.heif"
           className="hidden"
           disabled={loading}
           onChange={(e) => {
@@ -623,6 +629,12 @@ export function FaceReconUploader() {
             ))}
           </div>
         </div>
+      )}
+
+      {reverseResult?.error && !loading && (
+        <p className="text-sm text-amber-400/90 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3">
+          Reverse search: {reverseResult.error}
+        </p>
       )}
 
       {reverseResult && !loading && (

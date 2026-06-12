@@ -54,10 +54,10 @@ export async function POST(req: NextRequest) {
     const result = await callDeepFace(base64);
 
     if ("error" in result && result.error) {
-      return NextResponse.json(
-        { source: "Face Analysis", deepface: { error: result.error } },
-        { status: result.status ?? 500 }
-      );
+      return NextResponse.json({
+        source: "Face Analysis",
+        deepface: { error: result.error },
+      });
     }
 
     return NextResponse.json({
@@ -71,18 +71,15 @@ export async function POST(req: NextRequest) {
       message.includes("ECONNREFUSED") ||
       message.includes("AbortError");
 
-    return NextResponse.json(
-      {
-        source: "Face Analysis",
-        deepface: {
-          error: offline
-            ? process.env.VERCEL
-              ? "Face server unavailable — deploy python/face_server.py separately and set FACE_SERVER_URL"
-              : "Face server offline — run: npm run face (or npm run dev)"
-            : message,
-        },
+    return NextResponse.json({
+      source: "Face Analysis",
+      deepface: {
+        error: offline
+          ? process.env.VERCEL
+            ? "Face server unavailable — deploy python/face_server.py separately and set FACE_SERVER_URL"
+            : "Face server offline — run: npm run face (or npm run dev)"
+          : message,
       },
-      { status: 503 }
-    );
+    });
   }
 }

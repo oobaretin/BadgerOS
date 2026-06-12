@@ -67,6 +67,29 @@ export function buildDeepSummary(
     insights.push(`Reverse DNS: ${ptrHosts.join(", ")}`);
   }
 
+  const hunterEmail = enrichments.find((e) => e.kind === "hunter_email");
+  if (hunterEmail?.data.result) {
+    insights.push(`Hunter email verification: ${String(hunterEmail.data.result)}.`);
+  }
+
+  for (const r of primary.results) {
+    if (r.status !== "fulfilled" || r.source !== "/api/threat") continue;
+    const urlhaus = r.data.urlhaus as { url_count?: string | number; urls?: unknown[] } | undefined;
+    const count = Number(urlhaus?.url_count ?? urlhaus?.urls?.length ?? 0);
+    if (count > 0) {
+      insights.push(`${count} malicious URL(s) listed on URLhaus for this host.`);
+    }
+  }
+
+  for (const r of primary.results) {
+    if (r.status !== "fulfilled" || r.source !== "/api/whois") continue;
+    const hunter = r.data.hunter as { data?: { emails?: unknown[] } } | undefined;
+    const emailCount = hunter?.data?.emails?.length ?? 0;
+    if (emailCount > 0) {
+      insights.push(`${emailCount} public email(s) discovered via Hunter.io.`);
+    }
+  }
+
   const breaches = countBreaches(primary);
   if (breaches > 0) {
     insights.push(`${breaches} known breach exposure(s) on primary target.`);

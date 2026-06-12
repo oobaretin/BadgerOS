@@ -28,7 +28,7 @@ export const MODULES = [
   {
     route: "/api/phone",
     name: "Phone Intelligence",
-    description: "Numverify + Abstract phone validation",
+    description: "NumLookup phone validation",
     icon: "📱",
     types: ["phone"] as InputType[],
   },

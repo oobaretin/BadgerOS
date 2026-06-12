@@ -19,6 +19,14 @@ export async function POST(req: NextRequest) {
     const data = await runReverseImageSearch({ image: imageBlob, imageUrl: url });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 422 });
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      {
+        source: "Reverse Image Search",
+        error: message,
+        manualLinks: {},
+      },
+      { status: 200 }
+    );
   }
 }

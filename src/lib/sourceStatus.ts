@@ -54,9 +54,20 @@ function breachStatus(data: Record<string, unknown>): SourceStatus {
     hibpBreaches.length > 0 || (breachDir?.result?.length ?? 0) > 0;
   const suspicious =
     rep?.suspicious === true || repDetails?.data_breach === true;
+  const disposable =
+    (p.disify as { disposable?: boolean })?.disposable === true ||
+    (p.kickbox as { disposable?: boolean })?.disposable === true;
+  const hunter = p.hunter as {
+    data?: { status?: string; result?: string; score?: number };
+    skipped?: boolean;
+  } | null;
+  const hunterRisk =
+    hunter?.data?.result === "undeliverable" ||
+    hunter?.data?.status === "invalid" ||
+    (typeof hunter?.data?.score === "number" && hunter.data.score < 30);
 
-  if (hasBreaches || suspicious) return "found";
-  if (rep || hibp || breachDir) return "clean";
+  if (hasBreaches || suspicious || disposable || hunterRisk) return "found";
+  if (rep || hibp || breachDir || hunter?.data) return "clean";
   return "warning";
 }
 
@@ -68,11 +79,12 @@ function ipStatus(data: Record<string, unknown>): SourceStatus {
   const quickScan = p.quickScan as { vulns?: unknown[]; ports?: unknown[] } | null;
 
   const score = abuse?.data?.abuseConfidenceScore ?? 0;
+  const greynoise = p.greynoise as { noise?: boolean } | null;
   const hasVulns =
     (shodan?.vulns && Object.keys(shodan.vulns).length > 0) ||
     (quickScan?.vulns?.length ?? 0) > 0;
 
-  if (score >= 75 || hasVulns) return "found";
+  if (score >= 75 || hasVulns || greynoise?.noise) return "found";
   if (score >= 25) return "warning";
   if (geo?.status === "success" || quickScan || shodan) return "clean";
   return "warning";
@@ -84,9 +96,17 @@ function whoisStatus(data: Record<string, unknown>): SourceStatus {
   const dns = p.dns as { Answer?: unknown[] } | null;
   const certs = (p.certificates as unknown[]) ?? [];
   const st = p.securityTrails as { subdomains?: unknown[] } | null;
+  const domainsdb = p.domainsdb as { domains?: unknown[]; skipped?: boolean } | null;
+  const hunter = p.hunter as { data?: { emails?: unknown[] }; skipped?: boolean } | null;
 
   if (rdap?.errorCode && !dns?.Answer?.length) return "warning";
-  if (rdap?.ldhName || certs.length > 0 || (st?.subdomains?.length ?? 0) > 0) {
+  if (
+    rdap?.ldhName ||
+    certs.length > 0 ||
+    (st?.subdomains?.length ?? 0) > 0 ||
+    (domainsdb?.domains?.length ?? 0) > 0 ||
+    (hunter?.data?.emails?.length ?? 0) > 0
+  ) {
     return "found";
   }
   if (rdap || dns?.Answer?.length) return "clean";
@@ -110,28 +130,36 @@ function threatStatus(data: Record<string, unknown>): SourceStatus {
   const pulses = otx?.pulse_info?.count ?? 0;
   const phishHit =
     phish?.results?.in_database === true || phish?.results?.verified === true;
+  const mozilla = p.mozillaObservatory as { grade?: string; score?: number } | null;
+  const weakTls = mozilla?.grade && !["A", "A+", "A-"].includes(String(mozilla.grade));
+  const urlhaus = p.urlhaus as {
+    query_status?: string;
+    url_count?: string | number;
+    urls?: unknown[];
+    skipped?: boolean;
+  } | null;
+  const urlhausHits =
+    urlhaus?.query_status === "ok" &&
+    (Number(urlhaus.url_count) > 0 || (urlhaus.urls?.length ?? 0) > 0);
+  const mb = p.malwareBazaar as { query_status?: string; data?: unknown[]; skipped?: boolean } | null;
+  const mbHit = mb?.query_status === "ok" && Array.isArray(mb.data) && mb.data.length > 0;
 
-  if (malicious > 0 || phishHit) return "found";
-  if (suspicious > 0 || pulses > 0) return "warning";
+  if (malicious > 0 || phishHit || urlhausHits || mbHit) return "found";
+  if (suspicious > 0 || pulses > 0 || weakTls) return "warning";
   if (stats || otx || phish) return "clean";
   return "warning";
 }
 
 function phoneStatus(data: Record<string, unknown>): SourceStatus {
   const p = payload(data);
-  if (p.error) return "warning";
+  if (p.error && !(p.numlookup as { skipped?: boolean } | null)?.skipped) return "warning";
 
-  const numverify = p.numverify as { skipped?: boolean; valid?: boolean; carrier?: string } | null;
-  const abstract = p.abstract as { skipped?: boolean; valid?: boolean; carrier?: string } | null;
+  const numlookup = p.numlookup as { skipped?: boolean; valid?: boolean; carrier?: string } | null;
 
-  if (numverify?.skipped && abstract?.skipped) return "warning";
-
-  const valid = numverify?.valid === true || abstract?.valid === true;
-  const invalid = numverify?.valid === false || abstract?.valid === false;
-
-  if (invalid && !valid) return "warning";
-  if (valid || numverify?.carrier || abstract?.carrier) return "found";
-  if (numverify || abstract) return "clean";
+  if (numlookup?.skipped) return "warning";
+  if (numlookup?.valid === false) return "warning";
+  if (numlookup?.valid === true || numlookup?.carrier) return "found";
+  if (numlookup) return "clean";
   return "warning";
 }
 
@@ -226,7 +254,11 @@ export function getSourceSummary(result: ReconSourceResult): string {
         data?: { attributes?: { last_analysis_stats?: Record<string, number> } };
       } | null;
       const m = vt?.data?.attributes?.last_analysis_stats?.malicious ?? 0;
-      return m > 0 ? `${m} malicious VT detection(s)` : "No active threats flagged";
+      const urlhaus = p.urlhaus as { url_count?: string | number; urls?: unknown[] } | null;
+      const uh = Number(urlhaus?.url_count ?? urlhaus?.urls?.length ?? 0);
+      if (m > 0) return `${m} malicious VT detection(s)`;
+      if (uh > 0) return `${uh} malicious URL(s) on URLhaus`;
+      return "No active threats flagged";
     }
     case "/api/username": {
       const verified = (p.verified as Array<{ found?: boolean }>) ?? [];
@@ -237,13 +269,13 @@ export function getSourceSummary(result: ReconSourceResult): string {
       return n > 0 ? `${n} profile(s) found` : "No profiles detected";
     }
     case "/api/phone": {
-      const nv = p.numverify as { valid?: boolean; carrier?: string; location?: string; skipped?: boolean } | null;
-      const ab = p.abstract as { valid?: boolean; carrier?: string; location?: string; skipped?: boolean } | null;
-      if (nv?.skipped && ab?.skipped) return "Add Numverify or Abstract API keys";
-      const carrier = nv?.carrier ?? ab?.carrier;
-      const location = nv?.location ?? ab?.location;
+      const nl = p.numlookup as { valid?: boolean; carrier?: string; location?: string; skipped?: boolean } | null;
+      if (nl?.skipped) return "Add NUMLOOKUP_KEY (numlookupapi.com)";
+      const carrier = nl?.carrier;
+      const location = nl?.location;
       if (carrier) return `${carrier}${location ? ` · ${location}` : ""}`;
-      if (nv?.valid || ab?.valid) return "Valid phone number";
+      if (nl?.valid) return "Valid phone number";
+      if (nl?.valid === false) return "Invalid phone number";
       return status === "warning" ? "Phone lookup incomplete" : "Phone checked";
     }
     case "/api/plate": {

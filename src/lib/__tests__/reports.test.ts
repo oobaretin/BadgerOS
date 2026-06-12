@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildReportFromRecon, persistReconReport } from "../reports.ts";
+import { buildReportFromRecon, persistReconReport, getReportById } from "../reports.ts";
 import type { ReconResponse } from "../detect.ts";
 import db from "../db.ts";
 
@@ -57,5 +57,27 @@ describe("reports", () => {
       .get(id) as { query: string; query_type: string };
     assert.equal(row.query, "example.com");
     assert.equal(row.query_type, "domain");
+  });
+
+  it("loads persisted report by id as recon response", () => {
+    const id = persistReconReport({
+      type: "email",
+      query: "load-test@example.com",
+      results: [
+        {
+          source: "/api/breach",
+          status: "fulfilled",
+          data: { hibp: [] },
+        },
+      ],
+    });
+
+    const loaded = getReportById(id);
+    assert.ok(loaded);
+    assert.equal(loaded?.query, "load-test@example.com");
+    assert.equal(loaded?.type, "email");
+    assert.equal(loaded?.reportId, id);
+    assert.equal(loaded?.results.length, 1);
+    assert.equal(loaded?.results[0]?.source, "/api/breach");
   });
 });

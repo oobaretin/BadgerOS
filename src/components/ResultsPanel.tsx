@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Children, isValidElement, useState, type ReactNode } from "react";
 import type { ReconResponse, ReconSourceResult } from "@/lib/detect";
 import { ROUTE_LABELS } from "@/lib/routes";
 import { parseNhtsaDecode } from "@/lib/vehicleDetect";
@@ -52,6 +52,103 @@ function SkippedNotice({ data }: { data: unknown }) {
   );
 }
 
+function isSkippedSource(data: unknown): boolean {
+  return Boolean(
+    data && typeof data === "object" && (data as { skipped?: boolean }).skipped
+  );
+}
+
+function SkippableSection({
+  skipped: _skipped,
+  children,
+}: {
+  skipped: boolean;
+  children: ReactNode;
+}) {
+  void _skipped;
+  return <>{children}</>;
+}
+
+function isSkippedGridChild(child: React.ReactElement): boolean {
+  if (child.type === SkippableSection && child.props.skipped === true) {
+    return true;
+  }
+  return child.props["data-skipped"] === "true";
+}
+
+function SkippedSourcesFold({
+  count,
+  gridClass,
+  children,
+}: {
+  count: number;
+  gridClass: string;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  if (count === 0) return null;
+
+  return (
+    <div className="rounded-2xl border border-dashed border-border/80 bg-surface-elevated/30 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-surface-elevated/60 transition-colors"
+      >
+        <div>
+          <p className="text-sm font-medium text-foreground/80">
+            Optional sources ({count}) — need API keys
+          </p>
+          <p className="text-xs text-muted mt-0.5">
+            Configure keys in Settings to enable these lookups
+          </p>
+        </div>
+        <svg
+          className={`w-4 h-4 text-muted shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && <div className={`${gridClass} p-4 pt-0 border-t border-border/60`}>{children}</div>}
+    </div>
+  );
+}
+
+function PartitionedModuleGrid({
+  gridClass = "grid gap-4 sm:grid-cols-2 lg:grid-cols-3",
+  children,
+}: {
+  gridClass?: string;
+  children: ReactNode;
+}) {
+  const active: ReactNode[] = [];
+  const skipped: ReactNode[] = [];
+
+  for (const child of Children.toArray(children)) {
+    if (isValidElement(child) && isSkippedGridChild(child)) {
+      skipped.push(child);
+    } else if (child) {
+      active.push(child);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {active.length > 0 && <div className={gridClass}>{active}</div>}
+      {skipped.length > 0 && (
+        <SkippedSourcesFold count={skipped.length} gridClass={gridClass}>
+          {skipped}
+        </SkippedSourcesFold>
+      )}
+    </div>
+  );
+}
+
 function ErrorBlock({ message }: { message: string }) {
   return (
     <p className="text-sm text-error/80 font-mono">{message}</p>
@@ -88,7 +185,7 @@ function BreachResults({ data }: { data: Record<string, unknown> }) {
   const dirResults = breachDir?.result ?? [];
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <PartitionedModuleGrid>
       <DataSection title="EmailRep">
         {rep && !rep.error ? (
           <div className="space-y-3">
@@ -109,51 +206,122 @@ function BreachResults({ data }: { data: Record<string, unknown> }) {
         )}
       </DataSection>
 
-      <DataSection title="Have I Been Pwned">
-        <SkippedNotice data={hibp} />
-        {!(hibp as { skipped?: boolean })?.skipped && hibpBreaches.length ? (
-          <ul className="space-y-2 max-h-48 overflow-auto">
-            {hibpBreaches.map((b, i) => {
-              const item = b as Record<string, unknown>;
-              return (
+      <SkippableSection skipped={isSkippedSource(hibp)}>
+        <DataSection title="Have I Been Pwned">
+          <SkippedNotice data={hibp} />
+          {!isSkippedSource(hibp) && hibpBreaches.length ? (
+            <ul className="space-y-2 max-h-48 overflow-auto">
+              {hibpBreaches.map((b, i) => {
+                const item = b as Record<string, unknown>;
+                return (
+                  <li key={i} className="text-xs border-b border-border/50 pb-2">
+                    <p className="font-medium">{String(item.Name ?? item.name ?? "Unknown")}</p>
+                    <p className="text-muted font-mono">
+                      {String(item.BreachDate ?? item.date ?? "—")}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : !isSkippedSource(hibp) && hibp ? (
+            <p className="text-sm text-emerald-400">No breaches found</p>
+          ) : !isSkippedSource(hibp) ? (
+            <p className="text-sm text-foreground/40">HIBP lookup failed</p>
+          ) : null}
+        </DataSection>
+      </SkippableSection>
+
+      <SkippableSection skipped={isSkippedSource(breachDir)}>
+        <DataSection title="BreachDirectory">
+          <SkippedNotice data={breachDir} />
+          {!isSkippedSource(breachDir) && dirResults.length ? (
+            <ul className="space-y-2 max-h-48 overflow-auto">
+              {dirResults.slice(0, 10).map((item, i) => (
                 <li key={i} className="text-xs border-b border-border/50 pb-2">
-                  <p className="font-medium">{String(item.Name ?? item.name ?? "Unknown")}</p>
-                  <p className="text-muted font-mono">
-                    {String(item.BreachDate ?? item.date ?? "—")}
-                  </p>
+                  <p className="font-medium">{item.email ?? item.sources ?? "Match"}</p>
+                  {item.fields?.length ? (
+                    <p className="text-muted font-mono">{item.fields.join(", ")}</p>
+                  ) : null}
                 </li>
-              );
-            })}
-          </ul>
-        ) : hibp ? (
-          <p className="text-sm text-emerald-400">No breaches found</p>
+              ))}
+            </ul>
+          ) : !isSkippedSource(breachDir) && breachDir?.error ? (
+            <p className="text-sm text-foreground/50">{String(breachDir.error)}</p>
+          ) : !isSkippedSource(breachDir) && breachDir ? (
+            <p className="text-sm text-emerald-400">No breaches found</p>
+          ) : !isSkippedSource(breachDir) ? (
+            <p className="text-sm text-foreground/40">BreachDirectory lookup failed</p>
+          ) : null}
+        </DataSection>
+      </SkippableSection>
+
+      <DataSection title="Disify (disposable check)">
+        {(data.disify as { error?: string })?.error ? (
+          <p className="text-sm text-foreground/50">{String((data.disify as { error?: string }).error)}</p>
+        ) : (data.disify as { disposable?: boolean })?.disposable != null ? (
+          <dl className="space-y-2">
+            <KeyValue
+              label="Disposable"
+              value={(data.disify as { disposable?: boolean }).disposable ? "Yes" : "No"}
+            />
+            <KeyValue label="Domain" value={String((data.disify as { domain?: string }).domain ?? "—")} />
+            <KeyValue label="DNS valid" value={(data.disify as { dns?: boolean }).dns ? "Yes" : "No"} />
+            <KeyValue
+              label="Confidence"
+              value={String((data.disify as { confidence?: number }).confidence ?? "—")}
+            />
+          </dl>
         ) : (
-          <p className="text-sm text-foreground/40">HIBP lookup failed</p>
+          <p className="text-sm text-foreground/40">Disify lookup failed</p>
         )}
       </DataSection>
 
-      <DataSection title="BreachDirectory">
-        <SkippedNotice data={breachDir} />
-        {!(breachDir as { skipped?: boolean })?.skipped && dirResults.length ? (
-          <ul className="space-y-2 max-h-48 overflow-auto">
-            {dirResults.slice(0, 10).map((item, i) => (
-              <li key={i} className="text-xs border-b border-border/50 pb-2">
-                <p className="font-medium">{item.email ?? item.sources ?? "Match"}</p>
-                {item.fields?.length ? (
-                  <p className="text-muted font-mono">{item.fields.join(", ")}</p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        ) : breachDir?.error ? (
-          <p className="text-sm text-foreground/50">{String(breachDir.error)}</p>
-        ) : breachDir ? (
-          <p className="text-sm text-emerald-400">No breaches found</p>
+      <DataSection title="Kickbox (disposable)">
+        {(data.kickbox as { error?: string })?.error ? (
+          <p className="text-sm text-foreground/50">{String((data.kickbox as { error?: string }).error)}</p>
+        ) : (data.kickbox as { disposable?: boolean })?.disposable != null ? (
+          <KeyValue
+            label="Disposable"
+            value={(data.kickbox as { disposable?: boolean }).disposable ? "Yes" : "No"}
+          />
         ) : (
-          <p className="text-sm text-foreground/40">BreachDirectory lookup failed</p>
+          <p className="text-sm text-foreground/40">Kickbox lookup failed</p>
         )}
       </DataSection>
-    </div>
+
+      <SkippableSection skipped={isSkippedSource(data.hunter)}>
+        <DataSection title="Hunter.io (email verifier)">
+          <SkippedNotice data={data.hunter} />
+          {!isSkippedSource(data.hunter) &&
+          (data.hunter as { data?: { status?: string; result?: string; score?: number } })?.data ? (
+          <dl className="space-y-2">
+            <KeyValue
+              label="Status"
+              value={String(
+                (data.hunter as { data?: { status?: string } }).data?.status ?? "—"
+              )}
+            />
+            <KeyValue
+              label="Result"
+              value={String(
+                (data.hunter as { data?: { result?: string } }).data?.result ?? "—"
+              )}
+            />
+            <KeyValue
+              label="Score"
+              value={String(
+                (data.hunter as { data?: { score?: number } }).data?.score ?? "—"
+              )}
+            />
+          </dl>
+        ) : (data.hunter as { errors?: Array<{ details?: string }> })?.errors?.[0]?.details ? (
+          <p className="text-sm text-foreground/50">
+            {String((data.hunter as { errors?: Array<{ details?: string }> }).errors?.[0]?.details)}
+          </p>
+        ) : null}
+        </DataSection>
+      </SkippableSection>
+    </PartitionedModuleGrid>
   );
 }
 
@@ -167,156 +335,192 @@ function IpResults({ data }: { data: Record<string, unknown> }) {
   const quickScan = data.quickScan as Record<string, unknown> | null;
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="space-y-4">
       {resolvedFrom && (
-        <div className="sm:col-span-2 rounded-lg border border-border/60 bg-surface-elevated px-3 py-2 text-xs text-muted">
+        <div className="rounded-lg border border-border/60 bg-surface-elevated px-3 py-2 text-xs text-muted">
           Resolved <span className="font-mono text-foreground">{resolvedFrom}</span> →{" "}
           <span className="font-mono text-accent">{target}</span>
         </div>
       )}
-      <DataSection title="Geolocation (ip-api.com)">
-        {geo && geo.status === "success" ? (
-          <dl className="space-y-2">
-            <KeyValue label="IP" value={String(geo.query ?? "—")} />
-            <KeyValue label="City" value={String(geo.city ?? "—")} />
-            <KeyValue label="Region" value={String(geo.regionName ?? "—")} />
-            <KeyValue label="Country" value={String(geo.country ?? "—")} />
-            <KeyValue label="ZIP" value={String(geo.zip ?? "—")} />
-            <KeyValue label="Coords" value={`${geo.lat ?? "—"}, ${geo.lon ?? "—"}`} />
-            <KeyValue label="ISP" value={String(geo.isp ?? "—")} />
-            <KeyValue label="Org" value={String(geo.org ?? "—")} />
-            <KeyValue label="AS" value={String(geo.as ?? "—")} />
-          </dl>
-        ) : geo ? (
-          <p className="text-sm text-foreground/50">
-            {String(geo.message ?? "Geolocation lookup failed")}
-          </p>
-        ) : (
-          <p className="text-sm text-foreground/40">Geolocation lookup failed</p>
-        )}
-      </DataSection>
+      <PartitionedModuleGrid>
+        <DataSection title="Geolocation (ip-api.com)">
+          {geo && geo.status === "success" ? (
+            <dl className="space-y-2">
+              <KeyValue label="IP" value={String(geo.query ?? "—")} />
+              <KeyValue label="City" value={String(geo.city ?? "—")} />
+              <KeyValue label="Region" value={String(geo.regionName ?? "—")} />
+              <KeyValue label="Country" value={String(geo.country ?? "—")} />
+              <KeyValue label="ZIP" value={String(geo.zip ?? "—")} />
+              <KeyValue label="Coords" value={`${geo.lat ?? "—"}, ${geo.lon ?? "—"}`} />
+              <KeyValue label="ISP" value={String(geo.isp ?? "—")} />
+              <KeyValue label="Org" value={String(geo.org ?? "—")} />
+              <KeyValue label="AS" value={String(geo.as ?? "—")} />
+            </dl>
+          ) : geo ? (
+            <p className="text-sm text-foreground/50">
+              {String(geo.message ?? "Geolocation lookup failed")}
+            </p>
+          ) : (
+            <p className="text-sm text-foreground/40">Geolocation lookup failed</p>
+          )}
+        </DataSection>
 
-      <DataSection title="AbuseIPDB">
-        <SkippedNotice data={abuse} />
-        {!(abuse as { skipped?: boolean })?.skipped && abuseData ? (
-          <dl className="space-y-2">
-            <KeyValue label="IP" value={String(abuseData.ipAddress ?? "—")} />
-            <KeyValue
-              label="Abuse Score"
-              value={`${abuseData.abuseConfidenceScore ?? 0}/100`}
-            />
-            <KeyValue label="Country" value={String(abuseData.countryCode ?? "—")} />
-            <KeyValue label="ISP" value={String(abuseData.isp ?? "—")} />
-            <KeyValue label="Domain" value={String(abuseData.domain ?? "—")} />
-            <KeyValue label="Usage Type" value={String(abuseData.usageType ?? "—")} />
-            <KeyValue label="Total Reports" value={String(abuseData.totalReports ?? 0)} />
-            <KeyValue
-              label="Distinct Reporters"
-              value={String(abuseData.numDistinctUsers ?? 0)}
-            />
-            <KeyValue
-              label="Last Reported"
-              value={String(abuseData.lastReportedAt ?? "—")}
-            />
-          </dl>
-        ) : abuse?.error ? (
-          <p className="text-sm text-foreground/50">{String(abuse.error)}</p>
-        ) : (
-          <p className="text-sm text-foreground/40">AbuseIPDB lookup failed</p>
-        )}
-      </DataSection>
+        <SkippableSection skipped={isSkippedSource(abuse)}>
+          <DataSection title="AbuseIPDB">
+            <SkippedNotice data={abuse} />
+            {!isSkippedSource(abuse) && abuseData ? (
+              <dl className="space-y-2">
+                <KeyValue label="IP" value={String(abuseData.ipAddress ?? "—")} />
+                <KeyValue
+                  label="Abuse Score"
+                  value={`${abuseData.abuseConfidenceScore ?? 0}/100`}
+                />
+                <KeyValue label="Country" value={String(abuseData.countryCode ?? "—")} />
+                <KeyValue label="ISP" value={String(abuseData.isp ?? "—")} />
+                <KeyValue label="Domain" value={String(abuseData.domain ?? "—")} />
+                <KeyValue label="Usage Type" value={String(abuseData.usageType ?? "—")} />
+                <KeyValue label="Total Reports" value={String(abuseData.totalReports ?? 0)} />
+                <KeyValue
+                  label="Distinct Reporters"
+                  value={String(abuseData.numDistinctUsers ?? 0)}
+                />
+                <KeyValue
+                  label="Last Reported"
+                  value={String(abuseData.lastReportedAt ?? "—")}
+                />
+              </dl>
+            ) : !isSkippedSource(abuse) && abuse?.error ? (
+              <p className="text-sm text-foreground/50">{String(abuse.error)}</p>
+            ) : !isSkippedSource(abuse) ? (
+              <p className="text-sm text-foreground/40">AbuseIPDB lookup failed</p>
+            ) : null}
+          </DataSection>
+        </SkippableSection>
 
-      <DataSection title="Shodan Host">
-        <SkippedNotice data={shodan} />
-        {!(shodan as { skipped?: boolean })?.skipped && shodan && !shodan.error ? (
-          <dl className="space-y-2">
-            <KeyValue label="IP" value={String(shodan.ip_str ?? "—")} />
-            <KeyValue label="OS" value={String(shodan.os ?? "—")} />
-            <KeyValue label="ISP" value={String(shodan.isp ?? "—")} />
-            <KeyValue label="Org" value={String(shodan.org ?? "—")} />
-            <KeyValue
-              label="Ports"
-              value={
-                Array.isArray(shodan.ports)
-                  ? (shodan.ports as number[]).join(", ")
-                  : "—"
-              }
-            />
-            <KeyValue
-              label="Hostnames"
-              value={
-                Array.isArray(shodan.hostnames)
-                  ? (shodan.hostnames as string[]).join(", ")
-                  : "—"
-              }
-            />
-            <KeyValue
-              label="Vulns"
-              value={
-                shodan.vulns
-                  ? Object.keys(shodan.vulns as Record<string, unknown>).join(", ")
-                  : "—"
-              }
-            />
-          </dl>
-        ) : shodan?.error ? (
-          <p className="text-sm text-foreground/50">{String(shodan.error)}</p>
-        ) : (
-          <p className="text-sm text-foreground/40">Shodan lookup failed</p>
-        )}
-      </DataSection>
+        <SkippableSection skipped={isSkippedSource(shodan)}>
+          <DataSection title="Shodan Host">
+            <SkippedNotice data={shodan} />
+            {!isSkippedSource(shodan) && shodan && !shodan.error ? (
+              <dl className="space-y-2">
+                <KeyValue label="IP" value={String(shodan.ip_str ?? "—")} />
+                <KeyValue label="OS" value={String(shodan.os ?? "—")} />
+                <KeyValue label="ISP" value={String(shodan.isp ?? "—")} />
+                <KeyValue label="Org" value={String(shodan.org ?? "—")} />
+                <KeyValue
+                  label="Ports"
+                  value={
+                    Array.isArray(shodan.ports)
+                      ? (shodan.ports as number[]).join(", ")
+                      : "—"
+                  }
+                />
+                <KeyValue
+                  label="Hostnames"
+                  value={
+                    Array.isArray(shodan.hostnames)
+                      ? (shodan.hostnames as string[]).join(", ")
+                      : "—"
+                  }
+                />
+                <KeyValue
+                  label="Vulns"
+                  value={
+                    shodan.vulns
+                      ? Object.keys(shodan.vulns as Record<string, unknown>).join(", ")
+                      : "—"
+                  }
+                />
+              </dl>
+            ) : !isSkippedSource(shodan) && shodan?.error ? (
+              <p className="text-sm text-foreground/50">{String(shodan.error)}</p>
+            ) : !isSkippedSource(shodan) ? (
+              <p className="text-sm text-foreground/40">Shodan lookup failed</p>
+            ) : null}
+          </DataSection>
+        </SkippableSection>
 
-      <DataSection title="Shodan InternetDB (free)">
-        {quickScan && !quickScan.error ? (
-          <dl className="space-y-2">
-            <KeyValue label="IP" value={String(quickScan.ip ?? "—")} />
-            <KeyValue
-              label="Ports"
-              value={
-                Array.isArray(quickScan.ports)
-                  ? (quickScan.ports as number[]).join(", ")
-                  : "—"
-              }
-            />
-            <KeyValue
-              label="Hostnames"
-              value={
-                Array.isArray(quickScan.hostnames)
-                  ? (quickScan.hostnames as string[]).join(", ")
-                  : "—"
-              }
-            />
-            <KeyValue
-              label="Tags"
-              value={
-                Array.isArray(quickScan.tags)
-                  ? (quickScan.tags as string[]).join(", ")
-                  : "—"
-              }
-            />
-            <KeyValue
-              label="Vulns"
-              value={
-                Array.isArray(quickScan.vulns)
-                  ? (quickScan.vulns as string[]).join(", ")
-                  : "—"
-              }
-            />
-            <KeyValue
-              label="CPEs"
-              value={
-                Array.isArray(quickScan.cpes)
-                  ? (quickScan.cpes as string[]).slice(0, 5).join(", ")
-                  : "—"
-              }
-            />
-          </dl>
-        ) : quickScan?.error ? (
-          <p className="text-sm text-foreground/50">{String(quickScan.error)}</p>
-        ) : (
-          <p className="text-sm text-foreground/40">InternetDB lookup failed</p>
-        )}
-      </DataSection>
+        <DataSection title="Shodan InternetDB (free)">
+          {quickScan && !quickScan.error ? (
+            <dl className="space-y-2">
+              <KeyValue label="IP" value={String(quickScan.ip ?? "—")} />
+              <KeyValue
+                label="Ports"
+                value={
+                  Array.isArray(quickScan.ports)
+                    ? (quickScan.ports as number[]).join(", ")
+                    : "—"
+                }
+              />
+              <KeyValue
+                label="Hostnames"
+                value={
+                  Array.isArray(quickScan.hostnames)
+                    ? (quickScan.hostnames as string[]).join(", ")
+                    : "—"
+                }
+              />
+              <KeyValue
+                label="Tags"
+                value={
+                  Array.isArray(quickScan.tags)
+                    ? (quickScan.tags as string[]).join(", ")
+                    : "—"
+                }
+              />
+              <KeyValue
+                label="Vulns"
+                value={
+                  Array.isArray(quickScan.vulns)
+                    ? (quickScan.vulns as string[]).join(", ")
+                    : "—"
+                }
+              />
+              <KeyValue
+                label="CPEs"
+                value={
+                  Array.isArray(quickScan.cpes)
+                    ? (quickScan.cpes as string[]).slice(0, 5).join(", ")
+                    : "—"
+                }
+              />
+            </dl>
+          ) : quickScan?.error ? (
+            <p className="text-sm text-foreground/50">{String(quickScan.error)}</p>
+          ) : (
+            <p className="text-sm text-foreground/40">InternetDB lookup failed</p>
+          )}
+        </DataSection>
+
+        <DataSection title="GreyNoise Community">
+          {(data.greynoise as { error?: string })?.error ? (
+            <p className="text-sm text-foreground/50">{String((data.greynoise as { error?: string }).error)}</p>
+          ) : (data.greynoise as { ip?: string })?.ip ? (
+            <dl className="space-y-2">
+              <KeyValue label="Scanner noise" value={(data.greynoise as { noise?: boolean }).noise ? "Yes" : "No"} />
+              <KeyValue label="Known service (RIOT)" value={(data.greynoise as { riot?: boolean }).riot ? "Yes" : "No"} />
+              <KeyValue label="Message" value={String((data.greynoise as { message?: string }).message ?? "—")} />
+            </dl>
+          ) : (
+            <p className="text-sm text-foreground/40">GreyNoise lookup failed</p>
+          )}
+        </DataSection>
+
+        <DataSection title="IPinfo (backup geo)">
+          {(data.ipinfo as { error?: string })?.error ? (
+            <p className="text-sm text-foreground/50">{String((data.ipinfo as { error?: string }).error)}</p>
+          ) : (data.ipinfo as { ip?: string })?.ip ? (
+            <dl className="space-y-2">
+              <KeyValue label="Hostname" value={String((data.ipinfo as { hostname?: string }).hostname ?? "—")} />
+              <KeyValue label="City" value={String((data.ipinfo as { city?: string }).city ?? "—")} />
+              <KeyValue label="Region" value={String((data.ipinfo as { region?: string }).region ?? "—")} />
+              <KeyValue label="Country" value={String((data.ipinfo as { country?: string }).country ?? "—")} />
+              <KeyValue label="Org" value={String((data.ipinfo as { org?: string }).org ?? "—")} />
+            </dl>
+          ) : (
+            <p className="text-sm text-foreground/40">IPinfo lookup failed</p>
+          )}
+        </DataSection>
+      </PartitionedModuleGrid>
     </div>
   );
 }
@@ -358,7 +562,31 @@ function WhoisResults({ data }: { data: Record<string, unknown> }) {
   const snapshot = wayback?.archived_snapshots?.closest;
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <PartitionedModuleGrid>
+      {typeof data.clearbitLogo === "string" && (
+        <DataSection title="Clearbit Logo">
+          <div className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={data.clearbitLogo}
+              alt="Company logo"
+              className="h-12 w-12 rounded-lg border border-border bg-white object-contain p-1"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
+            />
+            <a
+              href={data.clearbitLogo}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs font-mono text-accent hover:underline break-all"
+            >
+              {data.clearbitLogo}
+            </a>
+          </div>
+        </DataSection>
+      )}
+
       <DataSection title="RDAP">
         {rdap && !rdap.errorCode ? (
           <dl className="space-y-2">
@@ -420,21 +648,104 @@ function WhoisResults({ data }: { data: Record<string, unknown> }) {
         )}
       </DataSection>
 
-      <DataSection title="SecurityTrails">
-        {st?.message ? (
-          <p className="text-sm text-foreground/50">{st.message}</p>
-        ) : st ? (
-          <dl className="space-y-2">
-            <KeyValue label="Hostname" value={String(st.hostname ?? "—")} />
-            <KeyValue
-              label="Subdomains"
-              value={String(st.subdomains?.length ?? 0)}
-            />
-          </dl>
-        ) : (
-          <p className="text-sm text-foreground/40">SecurityTrails lookup failed</p>
-        )}
-      </DataSection>
+      <SkippableSection skipped={isSkippedSource(st)}>
+        <DataSection title="SecurityTrails">
+          <SkippedNotice data={st} />
+          {!isSkippedSource(st) && st?.message ? (
+            <p className="text-sm text-foreground/50">{st.message}</p>
+          ) : !isSkippedSource(st) && st ? (
+            <dl className="space-y-2">
+              <KeyValue label="Hostname" value={String(st.hostname ?? "—")} />
+              <KeyValue
+                label="Subdomains"
+                value={String(st.subdomains?.length ?? 0)}
+              />
+            </dl>
+          ) : !isSkippedSource(st) ? (
+            <p className="text-sm text-foreground/40">SecurityTrails lookup failed</p>
+          ) : null}
+        </DataSection>
+      </SkippableSection>
+
+      <SkippableSection skipped={isSkippedSource(data.domainsdb)}>
+        <DataSection title="DomainsDB">
+          <SkippedNotice data={data.domainsdb} />
+          {!isSkippedSource(data.domainsdb) &&
+          (data.domainsdb as { domains?: Array<{ domain?: string; country?: string; create_date?: string }> })
+            ?.domains?.length ? (
+            <ul className="space-y-2 max-h-40 overflow-auto">
+              {(
+                data.domainsdb as {
+                  domains: Array<{ domain?: string; country?: string; create_date?: string }>;
+                }
+              ).domains.slice(0, 10).map((entry) => (
+                <li key={entry.domain} className="text-xs border-b border-border/50 pb-2">
+                  <p className="font-mono font-medium">{entry.domain}</p>
+                  <p className="text-muted">
+                    {entry.country ?? "—"}
+                    {entry.create_date ? ` · ${entry.create_date.slice(0, 10)}` : ""}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : !isSkippedSource(data.domainsdb) &&
+            (data.domainsdb as { error?: string })?.error ? (
+            <p className="text-sm text-foreground/50">
+              {String((data.domainsdb as { error?: string }).error)}
+            </p>
+          ) : null}
+        </DataSection>
+      </SkippableSection>
+
+      <SkippableSection skipped={isSkippedSource(data.hunter)}>
+        <DataSection title="Hunter.io (domain emails)">
+          <SkippedNotice data={data.hunter} />
+          {!isSkippedSource(data.hunter) &&
+          (data.hunter as { data?: { organization?: string; pattern?: string; emails?: Array<{ value?: string; type?: string; confidence?: number }> } })
+            ?.data ? (
+            <div className="space-y-2">
+              <dl className="space-y-2">
+                <KeyValue
+                  label="Organization"
+                  value={String(
+                    (data.hunter as { data?: { organization?: string } }).data?.organization ?? "—"
+                  )}
+                />
+                <KeyValue
+                  label="Pattern"
+                  value={String(
+                    (data.hunter as { data?: { pattern?: string } }).data?.pattern ?? "—"
+                  )}
+                />
+              </dl>
+              {((data.hunter as { data?: { emails?: Array<{ value?: string; type?: string; confidence?: number }> } })
+                .data?.emails?.length ?? 0) > 0 ? (
+                <ul className="space-y-1 max-h-32 overflow-auto">
+                  {(
+                    data.hunter as {
+                      data: { emails: Array<{ value?: string; type?: string; confidence?: number }> };
+                    }
+                  ).data.emails.slice(0, 8).map((entry) => (
+                    <li key={entry.value} className="text-xs font-mono border-b border-border/50 pb-1">
+                      {entry.value}
+                      {entry.confidence != null ? (
+                        <span className="text-muted"> · {entry.confidence}%</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-foreground/40">No public emails found</p>
+              )}
+            </div>
+          ) : !isSkippedSource(data.hunter) &&
+            (data.hunter as { errors?: Array<{ details?: string }> })?.errors?.[0]?.details ? (
+            <p className="text-sm text-foreground/50">
+              {String((data.hunter as { errors?: Array<{ details?: string }> }).errors?.[0]?.details)}
+            </p>
+          ) : null}
+        </DataSection>
+      </SkippableSection>
 
       <DataSection title="Wayback Machine">
         {snapshot?.available ? (
@@ -457,7 +768,7 @@ function WhoisResults({ data }: { data: Record<string, unknown> }) {
           <p className="text-sm text-foreground/40">Wayback lookup failed</p>
         )}
       </DataSection>
-    </div>
+    </PartitionedModuleGrid>
   );
 }
 
@@ -548,37 +859,23 @@ function PhoneResults({ data }: { data: Record<string, unknown> }) {
     return <ErrorBlock message={String(data.error)} />;
   }
 
-  const numverify = data.numverify as {
+  const numlookup = data.numlookup as {
     skipped?: boolean;
     valid?: boolean;
     number?: string;
     international_format?: string;
+    local_format?: string;
     country_name?: string;
     location?: string;
     carrier?: string;
     line_type?: string;
-    error?: { info?: string };
+    message?: string;
   } | null;
 
-  const abstract = data.abstract as {
-    skipped?: boolean;
-    valid?: boolean;
-    phone?: string;
-    format?: { international?: string; local?: string };
-    country?: { name?: string; code?: string; prefix?: string };
-    location?: string;
-    type?: string;
-    carrier?: string;
-    error?: { message?: string };
-  } | null;
-
-  const valid =
-    numverify?.valid != null && abstract?.valid != null
-      ? numverify.valid && abstract.valid
-      : (numverify?.valid ?? abstract?.valid);
-  const carrier = numverify?.carrier ?? abstract?.carrier;
-  const lineType = numverify?.line_type ?? abstract?.type;
-  const country = numverify?.country_name ?? abstract?.country?.name;
+  const valid = numlookup?.skipped || numlookup?.valid == null ? undefined : numlookup.valid;
+  const carrier = numlookup?.carrier;
+  const lineType = numlookup?.line_type;
+  const country = numlookup?.country_name;
   const hasSummary = valid != null || carrier || lineType || country;
 
   return (
@@ -593,7 +890,7 @@ function PhoneResults({ data }: { data: Record<string, unknown> }) {
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-wider text-rose-400/70">Carrier</p>
-            <p className="text-sm font-semibold mt-0.5">{carrier ?? "—"}</p>
+            <p className="text-sm font-semibold mt-0.5">{carrier || "—"}</p>
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-wider text-rose-400/70">Line type</p>
@@ -606,49 +903,24 @@ function PhoneResults({ data }: { data: Record<string, unknown> }) {
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-      <DataSection title="Numverify (APILayer)">
-        <SkippedNotice data={numverify} />
-        {!numverify?.skipped && numverify?.valid != null ? (
+      <DataSection title="NumLookup">
+        <SkippedNotice data={numlookup} />
+        {!numlookup?.skipped && numlookup?.valid != null ? (
           <dl className="space-y-2">
-            <KeyValue label="Number" value={String(data.number ?? numverify.number ?? "—")} />
-            <KeyValue label="Valid" value={numverify.valid ? "Yes" : "No"} />
-            <KeyValue label="International" value={String(numverify.international_format ?? "—")} />
-            <KeyValue label="Country" value={String(numverify.country_name ?? "—")} />
-            <KeyValue label="Location" value={String(numverify.location ?? "—")} />
-            <KeyValue label="Carrier" value={String(numverify.carrier ?? "—")} />
-            <KeyValue label="Line type" value={String(numverify.line_type ?? "—")} />
+            <KeyValue label="Number" value={String(numlookup.international_format ?? data.number ?? "—")} />
+            <KeyValue label="Valid" value={numlookup.valid ? "Yes" : "No"} />
+            <KeyValue label="Local" value={String(numlookup.local_format ?? "—")} />
+            <KeyValue label="Country" value={String(numlookup.country_name ?? "—")} />
+            <KeyValue label="Location" value={String(numlookup.location || "—")} />
+            <KeyValue label="Carrier" value={String(numlookup.carrier || "—")} />
+            <KeyValue label="Line type" value={String(numlookup.line_type ?? "—")} />
           </dl>
-        ) : numverify?.error ? (
-          <p className="text-sm text-foreground/50">{String(numverify.error.info ?? "Lookup failed")}</p>
-        ) : !numverify?.skipped ? (
-          <p className="text-sm text-foreground/50">Numverify lookup failed</p>
+        ) : numlookup?.message ? (
+          <p className="text-sm text-foreground/50">{String(numlookup.message)}</p>
+        ) : !numlookup?.skipped ? (
+          <p className="text-sm text-foreground/50">NumLookup lookup failed</p>
         ) : null}
       </DataSection>
-
-      <DataSection title="Abstract Phone Validation">
-        <SkippedNotice data={abstract} />
-        {!abstract?.skipped && abstract?.valid != null ? (
-          <dl className="space-y-2">
-            <KeyValue label="Number" value={String(abstract.phone ?? data.number ?? "—")} />
-            <KeyValue label="Valid" value={abstract.valid ? "Yes" : "No"} />
-            <KeyValue
-              label="International"
-              value={String(abstract.format?.international ?? "—")}
-            />
-            <KeyValue label="Local" value={String(abstract.format?.local ?? "—")} />
-            <KeyValue label="Country" value={String(abstract.country?.name ?? "—")} />
-            <KeyValue label="Location" value={String(abstract.location ?? "—")} />
-            <KeyValue label="Carrier" value={String(abstract.carrier ?? "—")} />
-            <KeyValue label="Type" value={String(abstract.type ?? "—")} />
-          </dl>
-        ) : abstract?.error ? (
-          <p className="text-sm text-foreground/50">{String(abstract.error.message ?? "Lookup failed")}</p>
-        ) : !abstract?.skipped ? (
-          <p className="text-sm text-foreground/50">Abstract lookup failed</p>
-        ) : null}
-      </DataSection>
-      </div>
     </div>
   );
 }
@@ -1051,83 +1323,243 @@ function ThreatResults({ data }: { data: Record<string, unknown> }) {
     errortext?: string;
   } | null;
 
+  const mozilla = data.mozillaObservatory as {
+    grade?: string;
+    score?: number;
+    tests_passed?: number;
+    tests_failed?: number;
+    tests_quantity?: number;
+    error?: string | null;
+    details_url?: string;
+  } | null;
+
+  const urlhaus = data.urlhaus as {
+    skipped?: boolean;
+    reason?: string;
+    query_status?: string;
+    host?: string;
+    url_count?: string | number;
+    firstseen?: string;
+    urlhaus_reference?: string;
+    urls?: Array<{
+      id?: string;
+      url?: string;
+      threat?: string;
+      url_status?: string;
+      tags?: string[];
+    }>;
+  } | null;
+
+  const malwareBazaar = data.malwareBazaar as {
+    skipped?: boolean;
+    reason?: string;
+    query_status?: string;
+    data?: Array<{
+      sha256_hash?: string;
+      file_name?: string;
+      file_type?: string;
+      signature?: string;
+      first_seen?: string;
+    }>;
+  } | null;
+
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <DataSection title="VirusTotal">
-        {vtStats ? (
-          <dl className="space-y-2">
-            <KeyValue label="Malicious" value={String(vtStats.malicious ?? 0)} />
-            <KeyValue label="Suspicious" value={String(vtStats.suspicious ?? 0)} />
-            <KeyValue label="Harmless" value={String(vtStats.harmless ?? 0)} />
-            <KeyValue label="Reputation" value={String(vtAttrs?.reputation ?? "—")} />
-          </dl>
-        ) : (
-          <p className="text-sm text-foreground/50">
-            {String(vt?.error?.message ?? "VirusTotal lookup failed")}
-          </p>
-        )}
-      </DataSection>
+    <PartitionedModuleGrid gridClass="grid gap-4 sm:grid-cols-2">
+      <SkippableSection skipped={isSkippedSource(vt)}>
+        <DataSection title="VirusTotal">
+          <SkippedNotice data={vt} />
+          {!isSkippedSource(vt) && vtStats ? (
+            <dl className="space-y-2">
+              <KeyValue label="Malicious" value={String(vtStats.malicious ?? 0)} />
+              <KeyValue label="Suspicious" value={String(vtStats.suspicious ?? 0)} />
+              <KeyValue label="Harmless" value={String(vtStats.harmless ?? 0)} />
+              <KeyValue label="Reputation" value={String(vtAttrs?.reputation ?? "—")} />
+            </dl>
+          ) : !isSkippedSource(vt) ? (
+            <p className="text-sm text-foreground/50">
+              {String(vt?.error?.message ?? "VirusTotal lookup failed")}
+            </p>
+          ) : null}
+        </DataSection>
+      </SkippableSection>
 
-      <DataSection title="AlienVault OTX">
-        {otx ? (
-          <dl className="space-y-2">
-            <KeyValue label="Pulse Count" value={String(otx.pulse_info?.count ?? 0)} />
-            <KeyValue label="Alexa Rank" value={String(otx.alexa ?? "—")} />
-            {otx.validation?.length ? (
-              <KeyValue label="Validation" value={otx.validation.join(", ")} />
-            ) : null}
-          </dl>
-        ) : (
-          <p className="text-sm text-foreground/40">OTX lookup failed</p>
-        )}
-      </DataSection>
+      <SkippableSection skipped={isSkippedSource(otx)}>
+        <DataSection title="AlienVault OTX">
+          <SkippedNotice data={otx} />
+          {!isSkippedSource(otx) && otx ? (
+            <dl className="space-y-2">
+              <KeyValue label="Pulse Count" value={String(otx.pulse_info?.count ?? 0)} />
+              <KeyValue label="Alexa Rank" value={String(otx.alexa ?? "—")} />
+              {otx.validation?.length ? (
+                <KeyValue label="Validation" value={otx.validation.join(", ")} />
+              ) : null}
+            </dl>
+          ) : !isSkippedSource(otx) ? (
+            <p className="text-sm text-foreground/40">OTX lookup failed</p>
+          ) : null}
+        </DataSection>
+      </SkippableSection>
 
-      <DataSection title="urlscan.io">
-        {urlScan?.results?.length ? (
-          <ul className="space-y-2 max-h-40 overflow-auto">
-            {urlScan.results.map((scan, i) => (
-              <li key={i} className="text-xs border-b border-border/50 pb-2">
-                <p className="font-medium truncate">{scan.page?.title ?? "Untitled"}</p>
-                {scan.page?.url && (
+      <SkippableSection skipped={isSkippedSource(urlScan)}>
+        <DataSection title="urlscan.io">
+          <SkippedNotice data={urlScan} />
+          {!isSkippedSource(urlScan) && urlScan?.results?.length ? (
+            <ul className="space-y-2 max-h-40 overflow-auto">
+              {urlScan.results.map((scan, i) => (
+                <li key={i} className="text-xs border-b border-border/50 pb-2">
+                  <p className="font-medium truncate">{scan.page?.title ?? "Untitled"}</p>
+                  {scan.page?.url && (
+                    <a
+                      href={scan.page.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-accent hover:underline break-all"
+                    >
+                      {scan.page.url}
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : !isSkippedSource(urlScan) ? (
+            <p className="text-sm text-foreground/40">
+              {urlScan?.message ?? "No scans found"}
+            </p>
+          ) : null}
+        </DataSection>
+      </SkippableSection>
+
+      <SkippableSection skipped={isSkippedSource(phishTank)}>
+        <DataSection title="PhishTank">
+          <SkippedNotice data={phishTank} />
+          {!isSkippedSource(phishTank) && phishTank?.results ? (
+            <dl className="space-y-2">
+              <KeyValue
+                label="In Database"
+                value={phishTank.results.in_database ? "Yes" : "No"}
+              />
+              <KeyValue
+                label="Verified"
+                value={phishTank.results.verified ? "Yes" : "No"}
+              />
+              <KeyValue label="Phish ID" value={String(phishTank.results.phish_id ?? "—")} />
+            </dl>
+          ) : !isSkippedSource(phishTank) ? (
+            <p className="text-sm text-foreground/50">
+              {phishTank?.errortext ?? "PhishTank lookup failed"}
+            </p>
+          ) : null}
+        </DataSection>
+      </SkippableSection>
+
+      <SkippableSection skipped={isSkippedSource(urlhaus)}>
+        <DataSection title="URLhaus (abuse.ch)">
+          <SkippedNotice data={urlhaus} />
+          {!isSkippedSource(urlhaus) && urlhaus?.query_status === "ok" ? (
+            <div className="space-y-2">
+              <dl className="space-y-2">
+                <KeyValue label="Host" value={String(urlhaus.host ?? "—")} />
+                <KeyValue label="URL count" value={String(urlhaus.url_count ?? urlhaus.urls?.length ?? 0)} />
+                <KeyValue label="First seen" value={String(urlhaus.firstseen ?? "—")} />
+              </dl>
+              {urlhaus.urlhaus_reference ? (
+                <a
+                  href={urlhaus.urlhaus_reference}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-accent hover:underline"
+                >
+                  URLhaus reference
+                </a>
+              ) : null}
+              {(urlhaus.urls?.length ?? 0) > 0 ? (
+                <ul className="space-y-2 max-h-40 overflow-auto mt-2">
+                  {urlhaus.urls!.slice(0, 6).map((entry) => (
+                    <li key={entry.id ?? entry.url} className="text-xs border-b border-border/50 pb-2">
+                      <p className="font-mono break-all">{entry.url}</p>
+                      <p className="text-muted">
+                        {entry.threat ?? "—"} · {entry.url_status ?? "—"}
+                        {entry.tags?.length ? ` · ${entry.tags.join(", ")}` : ""}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-emerald-400">No malicious URLs listed</p>
+              )}
+            </div>
+          ) : !isSkippedSource(urlhaus) && urlhaus?.query_status === "no_results" ? (
+            <p className="text-sm text-emerald-400">Host not in URLhaus</p>
+          ) : null}
+        </DataSection>
+      </SkippableSection>
+
+      <SkippableSection skipped={isSkippedSource(malwareBazaar)}>
+        <DataSection title="MalwareBazaar (abuse.ch)">
+          <SkippedNotice data={malwareBazaar} />
+          {!isSkippedSource(malwareBazaar) && malwareBazaar?.query_status === "ok" ? (
+            <ul className="space-y-2 max-h-40 overflow-auto">
+              {(malwareBazaar.data ?? []).slice(0, 3).map((sample) => (
+                <li key={sample.sha256_hash} className="text-xs border-b border-border/50 pb-2">
+                  <p className="font-mono break-all">{sample.sha256_hash}</p>
+                  <p className="text-muted">
+                    {sample.signature ?? sample.file_type ?? "Unknown"} · {sample.first_seen ?? "—"}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : !isSkippedSource(malwareBazaar) && malwareBazaar?.query_status === "hash_not_found" ? (
+            <p className="text-sm text-emerald-400">Hash not in MalwareBazaar</p>
+          ) : null}
+        </DataSection>
+      </SkippableSection>
+
+      <SkippableSection skipped={isSkippedSource(mozilla)}>
+        <DataSection title="Mozilla Observatory">
+          <SkippedNotice data={mozilla} />
+          {!isSkippedSource(mozilla) && mozilla?.grade ? (
+            <dl className="space-y-2">
+              <KeyValue label="Grade" value={String(mozilla.grade)} />
+              <KeyValue label="Score" value={String(mozilla.score ?? "—")} />
+              <KeyValue
+                label="Tests"
+                value={`${mozilla.tests_passed ?? 0}/${mozilla.tests_quantity ?? 0} passed`}
+              />
+              {mozilla.details_url ? (
+                <dd>
                   <a
-                    href={scan.page.url}
+                    href={mozilla.details_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="font-mono text-accent hover:underline break-all"
+                    className="text-xs text-accent hover:underline"
                   >
-                    {scan.page.url}
+                    Full report
                   </a>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-foreground/40">
-            {urlScan?.message ?? "No scans found"}
-          </p>
-        )}
-      </DataSection>
+                </dd>
+              ) : null}
+            </dl>
+          ) : !isSkippedSource(mozilla) && mozilla?.error ? (
+            <p className="text-sm text-foreground/50">{String(mozilla.error)}</p>
+          ) : !isSkippedSource(mozilla) ? (
+            <p className="text-sm text-foreground/40">Mozilla scan unavailable</p>
+          ) : null}
+        </DataSection>
+      </SkippableSection>
 
-      <DataSection title="PhishTank">
-        {phishTank?.results ? (
-          <dl className="space-y-2">
-            <KeyValue
-              label="In Database"
-              value={phishTank.results.in_database ? "Yes" : "No"}
-            />
-            <KeyValue
-              label="Verified"
-              value={phishTank.results.verified ? "Yes" : "No"}
-            />
-            <KeyValue label="Phish ID" value={String(phishTank.results.phish_id ?? "—")} />
-          </dl>
-        ) : (
-          <p className="text-sm text-foreground/50">
-            {phishTank?.errortext ?? "PhishTank lookup failed"}
-          </p>
-        )}
-      </DataSection>
-    </div>
+      {typeof data.clearbitLogo === "string" && (
+        <DataSection title="Clearbit Logo">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={data.clearbitLogo}
+            alt="Domain logo"
+            className="h-10 w-10 rounded border border-border bg-white object-contain p-1"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = "none";
+            }}
+          />
+        </DataSection>
+      )}
+    </PartitionedModuleGrid>
   );
 }
 
@@ -1136,6 +1568,72 @@ function getPayload(data: Record<string, unknown>): Record<string, unknown> {
     return data.data as Record<string, unknown>;
   }
   return data;
+}
+
+const PAYLOAD_META_KEYS = new Set([
+  "source",
+  "error",
+  "target",
+  "number",
+  "resolvedFrom",
+  "clearbitLogo",
+]);
+
+function countSubSources(data: Record<string, unknown>) {
+  let active = 0;
+  let skipped = 0;
+
+  for (const [key, value] of Object.entries(data)) {
+    if (PAYLOAD_META_KEYS.has(key)) continue;
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      (value as { skipped?: boolean }).skipped
+    ) {
+      skipped += 1;
+    } else if (value != null && value !== "") {
+      active += 1;
+    }
+  }
+
+  return { active, skipped };
+}
+
+function aggregateSourceCoverage(results: ReconSourceResult[]) {
+  return results.reduce(
+    (acc, result) => {
+      if (result.status === "rejected") return acc;
+      const { active, skipped } = countSubSources(getPayload(result.data));
+      acc.active += active;
+      acc.skipped += skipped;
+      return acc;
+    },
+    { active: 0, skipped: 0 }
+  );
+}
+
+function SourceCoverageBar({
+  active,
+  skipped,
+}: {
+  active: number;
+  skipped: number;
+}) {
+  if (active === 0 && skipped === 0) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-elevated/40 px-3 py-2 text-xs">
+      <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-emerald-400">
+        {active} active source{active !== 1 ? "s" : ""}
+      </span>
+      {skipped > 0 && (
+        <span className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2 py-1 text-muted">
+          {skipped} skipped — add keys in Settings
+        </span>
+      )}
+    </div>
+  );
 }
 
 function SourceResult({ source, status, data }: ReconSourceResult) {
@@ -1195,6 +1693,8 @@ function ExpandableSourceCard({
   const [expanded, setExpanded] = useState(defaultExpanded);
   const status = getSourceStatus(result);
   const summary = getSourceSummary(result);
+  const subSources =
+    result.status === "fulfilled" ? countSubSources(getPayload(result.data)) : null;
   const label =
     (result.data.source as string) ??
     ROUTE_LABELS[result.source as keyof typeof ROUTE_LABELS] ??
@@ -1217,7 +1717,12 @@ function ExpandableSourceCard({
               <span className="text-[10px] text-accent animate-pulse">Loading…</span>
             )}
           </div>
-          <p className="text-xs text-muted mt-0.5 truncate">{summary}</p>
+          <p className="text-xs text-muted mt-0.5 truncate">
+            {summary}
+            {subSources && subSources.skipped > 0
+              ? ` · ${subSources.active} active, ${subSources.skipped} need keys`
+              : ""}
+          </p>
         </div>
         <span className="text-[10px] font-mono text-muted shrink-0 hidden sm:inline">
           {result.source}
@@ -1278,8 +1783,12 @@ export function ResultsPanel({
       })
   );
 
+  const coverage = aggregateSourceCoverage(response.results);
+
   return (
     <div className="space-y-4">
+      <SourceCoverageBar active={coverage.active} skipped={coverage.skipped} />
+
       {response.results.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {(Object.keys(STATUS_META) as SourceStatus[]).map((key) => (

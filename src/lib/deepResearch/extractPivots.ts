@@ -119,6 +119,25 @@ export function extractPivots(
         addPivot(pivots, seen, "domain", mxHost, "MX record host", query);
       }
 
+      const hunterEmails =
+        (data.hunter as { data?: { emails?: Array<{ value?: string }> } } | undefined)?.data
+          ?.emails ?? [];
+      for (const entry of hunterEmails.slice(0, 3)) {
+        const email = entry.value?.trim().toLowerCase();
+        if (email && detectInputType(email) === "email") {
+          addPivot(pivots, seen, "email", email, "Hunter.io domain email", query);
+        }
+      }
+
+      const relatedDomains =
+        (data.domainsdb as { domains?: Array<{ domain?: string }> } | undefined)?.domains ?? [];
+      for (const entry of relatedDomains.slice(0, 3)) {
+        const domain = entry.domain?.trim().toLowerCase();
+        if (domain && domain !== root && detectInputType(domain) === "domain") {
+          addPivot(pivots, seen, "domain", domain, "DomainsDB related domain", query);
+        }
+      }
+
       const answers = (data.dns as { Answer?: Array<{ data?: string }> })?.Answer ?? [];
       for (const a of answers.slice(0, 2)) {
         const ip = a.data?.trim();
@@ -139,6 +158,11 @@ export function extractPivots(
           `Reverse hostname for ${target}`,
           query
         );
+      }
+
+      const ipinfoHost = (data.ipinfo as { hostname?: string } | undefined)?.hostname;
+      if (ipinfoHost && detectInputType(ipinfoHost) === "domain") {
+        addPivot(pivots, seen, "domain", ipinfoHost, `IPinfo hostname for ${target}`, query);
       }
 
       if (type === "ip" && target !== query) {

@@ -16,28 +16,24 @@ export async function runPhoneIntel(query: string) {
     };
   }
 
-  const [numverify, abstract] = await Promise.all([
-    hasEnv("NUMVERIFY_KEY")
-      ? fetchJson(
-          `https://apilayer.net/api/validate?access_key=${process.env.NUMVERIFY_KEY}&number=${encodeURIComponent(number)}&country_code=&format=1`,
-          undefined,
-          15_000
-        )
-      : Promise.resolve({ ok: true, status: 0, data: skippedSource() }),
+  if (!hasEnv("NUMLOOKUP_KEY")) {
+    return {
+      source: "Phone Intelligence",
+      number,
+      error: "Add NUMLOOKUP_KEY (numlookupapi.com — free tier)",
+      numlookup: skippedSource("Add NUMLOOKUP_KEY (numlookupapi.com — free tier)"),
+    };
+  }
 
-    hasEnv("ABSTRACT_PHONE_KEY")
-      ? fetchJson(
-          `https://phonevalidation.abstractapi.com/v1/?api_key=${process.env.ABSTRACT_PHONE_KEY}&phone=${encodeURIComponent(number)}`,
-          undefined,
-          15_000
-        )
-      : Promise.resolve({ ok: true, status: 0, data: skippedSource() }),
-  ]);
+  const numlookup = await fetchJson(
+    `https://api.numlookupapi.com/v1/validate/${encodeURIComponent(`+${number}`)}`,
+    { headers: { apikey: process.env.NUMLOOKUP_KEY! } },
+    15_000
+  );
 
   return {
     source: "Phone Intelligence",
     number,
-    numverify: numverify.data,
-    abstract: abstract.data,
+    numlookup: numlookup.data,
   };
 }

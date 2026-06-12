@@ -14,7 +14,7 @@ export async function runIpIntel(query: string, inputType: InputType = "ip") {
     }
   }
 
-  const [geo, abuse, shodan, interdb] = await Promise.all([
+  const [geo, abuse, shodan, interdb, greynoise, ipinfo] = await Promise.all([
     fetchJson(
       `http://ip-api.com/json/${encodeURIComponent(target)}?fields=status,country,regionName,city,zip,lat,lon,isp,org,as,query`
     ),
@@ -38,6 +38,10 @@ export async function runIpIntel(query: string, inputType: InputType = "ip") {
       : Promise.resolve({ ok: true, status: 0, data: skippedSource() }),
 
     fetchJson(`https://internetdb.shodan.io/${encodeURIComponent(target)}`),
+
+    fetchJson(`https://api.greynoise.io/v3/community/${encodeURIComponent(target)}`, undefined, 10_000),
+
+    fetchJson(`https://ipinfo.io/${encodeURIComponent(target)}/json`, undefined, 10_000),
   ]);
 
   return {
@@ -48,5 +52,7 @@ export async function runIpIntel(query: string, inputType: InputType = "ip") {
     abuse: abuse.data,
     shodan: shodan.data,
     quickScan: interdb.data,
+    greynoise: greynoise.data,
+    ipinfo: ipinfo.data,
   };
 }

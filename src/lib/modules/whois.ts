@@ -10,7 +10,8 @@ interface CrtShEntry {
 export async function runWhoisIntel(query: string) {
   const encoded = encodeURIComponent(query);
 
-  const [rdap, dnsGoogle, dnsCF, certs, sectrails, wayback] = await Promise.all([
+  const [rdap, dnsGoogle, dnsCF, certs, sectrails, wayback, domainsdb, hunter] =
+    await Promise.all([
     fetchJson(`https://rdap.org/domain/${encoded}`, undefined, 15_000),
     fetchJson(`https://dns.google/resolve?name=${encoded}&type=A`),
     fetchJson(`https://cloudflare-dns.com/dns-query?name=${encoded}&type=MX`, {
@@ -23,6 +24,19 @@ export async function runWhoisIntel(query: string) {
         })
       : Promise.resolve({ ok: true, status: 0, data: skippedSource() }),
     fetchJson(`https://archive.org/wayback/available?url=${encoded}`),
+    hasEnv("DOMAINSDB_KEY")
+      ? fetchJson(`https://api.domainsdb.info/v1/domains/search?domain=${encoded}`, {
+          headers: {
+            "X-Api-Key": process.env.DOMAINSDB_KEY!,
+            "api-key": process.env.DOMAINSDB_KEY!,
+          },
+        })
+      : Promise.resolve({ ok: true, status: 0, data: skippedSource() }),
+    hasEnv("HUNTER_KEY")
+      ? fetchJson(
+          `https://api.hunter.io/v2/domain-search?domain=${encoded}&limit=10&api_key=${process.env.HUNTER_KEY!}`
+        )
+      : Promise.resolve({ ok: true, status: 0, data: skippedSource() }),
   ]);
 
   const certValue =
@@ -36,5 +50,8 @@ export async function runWhoisIntel(query: string) {
     certificates: certValue,
     securityTrails: sectrails.data,
     wayback: wayback.data,
+    domainsdb: domainsdb.data,
+    hunter: hunter.data,
+    clearbitLogo: `https://logo.clearbit.com/${query}`,
   };
 }
