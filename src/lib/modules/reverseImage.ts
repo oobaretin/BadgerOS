@@ -40,25 +40,67 @@ async function uploadToCatbox(file: Blob): Promise<string> {
 
   const url = (await res.text()).trim();
   if (!res.ok || !url.startsWith("https://")) {
-    throw new Error(
-      "Temporary image hosting failed — add IMGBB_KEY (imgbb.com) for reliable uploads"
-    );
+    throw new Error(`catbox failed (${res.status}): ${url.slice(0, 80)}`);
   }
 
   return url;
 }
 
-async function uploadForPublicUrl(file: Blob): Promise<{ url: string; via: "imgbb" | "catbox" }> {
-  if (hasEnv("IMGBB_KEY")) {
-    return { url: await uploadToImgbb(file), via: "imgbb" };
+async function uploadToTmpfiles(file: Blob): Promise<string> {
+  const form = new FormData();
+  form.append("file", file, "image.jpg");
+
+  const res = await fetch("https://tmpfiles.org/api/v1/upload", {
+    method: "POST",
+    body: form,
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  const data = (await res.json()) as { status?: string; data?: { url?: string } };
+  const pageUrl = data.data?.url;
+  if (!res.ok || data.status !== "success" || !pageUrl) {
+    throw new Error("tmpfiles upload failed");
   }
-  return { url: await uploadToCatbox(file), via: "catbox" };
+
+  const match = pageUrl.match(/tmpfiles\.org\/([^/]+)\/(.+)$/i);
+  if (!match) {
+    throw new Error("tmpfiles URL parse failed");
+  }
+
+  return `https://tmpfiles.org/dl/${match[1]}/${match[2]}`;
+}
+
+async function uploadForPublicUrl(file: Blob): Promise<{ url: string; via: "imgbb" | "catbox" | "tmpfiles" }> {
+  if (hasEnv("IMGBB_KEY")) {
+    try {
+      const url = await uploadToImgbb(file);
+      return { url, via: "imgbb" };
+    } catch {
+      // fall through to anonymous hosts
+    }
+  }
+
+  try {
+    const url = await uploadToCatbox(file);
+    return { url, via: "catbox" };
+  } catch {
+    // fall through to tmpfiles
+  }
+
+  try {
+    const url = await uploadToTmpfiles(file);
+    return { url, via: "tmpfiles" };
+  } catch {
+    throw new Error(
+      "Image hosting failed — add IMGBB_KEY (imgbb.com) or try again shortly"
+    );
+  }
 }
 
 async function resolveTarget(input: ReverseImageInput): Promise<{
   target: string;
   imageBlob?: Blob;
-  uploadVia?: "imgbb" | "catbox";
+  uploadVia?: "imgbb" | "catbox" | "tmpfiles";
 }> {
   const url = input.imageUrl?.trim();
   if (url) {
@@ -164,7 +206,7 @@ export async function runReverseImageSearch(input: ReverseImageInput) {
 
   let target: string;
   let imageBlob: Blob | undefined;
-  let uploadVia: "imgbb" | "catbox" | undefined;
+  let uploadVia: "imgbb" | "catbox" | "tmpfiles" | undefined;
 
   try {
     ({ target, imageBlob, uploadVia } = await resolveTarget(input));
@@ -186,10 +228,15 @@ export async function runReverseImageSearch(input: ReverseImageInput) {
     source: "Reverse Image Search",
     imageUrl: target,
     upload:
-      uploadVia === "catbox"
+      uploadVia === "tmpfiles"
+        ? {
+            via: "tmpfiles",
+            note: "Hosted via tmpfiles.org fallback — add IMGBB_KEY for production use",
+          }
+        : uploadVia === "catbox"
         ? {
             via: "catbox",
-            note: "Hosted via temporary fallback — add IMGBB_KEY for production use",
+            note: "Hosted via catbox fallback — add IMGBB_KEY for production use",
           }
         : uploadVia === "imgbb"
           ? { via: "imgbb" }

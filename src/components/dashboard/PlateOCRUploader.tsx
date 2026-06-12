@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isImageFile, resetFileInput } from "@/lib/imageUpload";
+import { createPreviewUrl, isImageFile, prepareImageUpload, resetFileInput } from "@/lib/imageUpload";
 import { UploadKeysBanner } from "@/components/dashboard/UploadKeysBanner";
 import { isVin, normalizeVin } from "@/lib/vehicleDetect";
 
@@ -120,21 +120,32 @@ export function PlateOCRUploader({
 
   const setPreviewFile = useCallback((file: File) => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-    const url = URL.createObjectURL(file);
+    const url = createPreviewUrl(file);
     previewUrlRef.current = url;
     setPreview(url);
   }, []);
 
   const handleFile = useCallback(
     async (file: File) => {
-      setPreviewFile(file);
+      let uploadFile: File;
+      try {
+        uploadFile = await prepareImageUpload(file);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Could not prepare image for upload";
+        onError?.(message);
+        setResult({ error: message });
+        resetFileInput(inputRef.current);
+        return;
+      }
+
+      setPreviewFile(uploadFile);
       setLoading(true);
       setResult(null);
       setPhase("ocr");
 
       try {
         const form = new FormData();
-        form.append("image", file);
+        form.append("image", uploadFile);
         form.append("country", country);
 
         const ocrRes = await fetch("/api/plate/ocr", { method: "POST", body: form });

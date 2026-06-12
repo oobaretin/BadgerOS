@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPreviewUrl, isImageFile, prepareImageUpload } from "@/lib/imageUpload";
 
 interface FaceResult {
   age?: number;
@@ -49,21 +50,31 @@ export function FaceAnalyzer() {
 
   const setPreviewFile = useCallback((file: File) => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-    const url = URL.createObjectURL(file);
+    const url = createPreviewUrl(file);
     previewUrlRef.current = url;
     setPreview(url);
   }, []);
 
   const analyzeFile = useCallback(
     async (file: File) => {
-      setPreviewFile(file);
       setLoading(true);
       setError(null);
       setFaces([]);
 
+      let uploadFile: File;
+      try {
+        uploadFile = await prepareImageUpload(file);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not prepare image for upload");
+        setLoading(false);
+        return;
+      }
+
+      setPreviewFile(uploadFile);
+
       try {
         const form = new FormData();
-        form.append("image", file);
+        form.append("image", uploadFile);
 
         const res = await fetch("/api/face/analyze", {
           method: "POST",
@@ -97,7 +108,7 @@ export function FaceAnalyzer() {
     setDragActive(false);
     if (loading) return;
     const file = e.dataTransfer.files[0];
-    if (file?.type.startsWith("image/")) analyzeFile(file);
+    if (file && isImageFile(file)) analyzeFile(file);
   };
 
   return (

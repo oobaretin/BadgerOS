@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isImageFile, resetFileInput } from "@/lib/imageUpload";
+import { createPreviewUrl, isImageFile, prepareImageUpload, resetFileInput } from "@/lib/imageUpload";
 import { UploadKeysBanner } from "@/components/dashboard/UploadKeysBanner";
 
 interface ReverseImageResult {
@@ -97,11 +97,25 @@ export function ReverseImageSearch() {
 
   const setPreviewFile = useCallback((file: File) => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-    const url = URL.createObjectURL(file);
+    const url = createPreviewUrl(file);
     previewUrlRef.current = url;
     setPreview(url);
     setSelectedFile(file);
   }, []);
+
+  const selectFile = useCallback(
+    async (file: File) => {
+      try {
+        const prepared = await prepareImageUpload(file);
+        setPreviewFile(prepared);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not prepare image for upload");
+        resetFileInput(inputRef.current);
+      }
+    },
+    [setPreviewFile]
+  );
 
   const runSearch = useCallback(async () => {
     if (!selectedFile && !imageUrl.trim()) {
@@ -140,7 +154,7 @@ export function ReverseImageSearch() {
     setDragActive(false);
     if (loading) return;
     const file = e.dataTransfer.files[0];
-    if (file && isImageFile(file)) setPreviewFile(file);
+    if (file && isImageFile(file)) void selectFile(file);
   };
 
   return (
@@ -194,7 +208,7 @@ export function ReverseImageSearch() {
           disabled={loading}
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) setPreviewFile(file);
+            if (file) void selectFile(file);
             resetFileInput(e.target);
           }}
         />

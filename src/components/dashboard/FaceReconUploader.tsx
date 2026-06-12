@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isImageFile, resetFileInput } from "@/lib/imageUpload";
+import { createPreviewUrl, isImageFile, prepareImageUpload, resetFileInput } from "@/lib/imageUpload";
 import { UploadKeysBanner } from "@/components/dashboard/UploadKeysBanner";
 
 interface FaceRegion {
@@ -436,7 +436,7 @@ export function FaceReconUploader() {
 
   const setPreviewFile = useCallback((file: File) => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-    const url = URL.createObjectURL(file);
+    const url = createPreviewUrl(file);
     previewUrlRef.current = url;
     setPreview(url);
   }, []);
@@ -449,7 +449,6 @@ export function FaceReconUploader() {
         return;
       }
 
-      setPreviewFile(file);
       setLoading(true);
       setError(null);
       setFaceResult(null);
@@ -457,11 +456,23 @@ export function FaceReconUploader() {
       setManualOpened(false);
       lastOpenedUrlRef.current = null;
 
+      let uploadFile: File;
+      try {
+        uploadFile = await prepareImageUpload(file);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not prepare image for upload");
+        resetFileInput(inputRef.current);
+        setLoading(false);
+        return;
+      }
+
+      setPreviewFile(uploadFile);
+
       const faceForm = new FormData();
-      faceForm.append("image", file);
+      faceForm.append("image", uploadFile);
 
       const revForm = new FormData();
-      revForm.append("image", file);
+      revForm.append("image", uploadFile);
 
       try {
         const [faceRes, revRes] = await Promise.allSettled([
